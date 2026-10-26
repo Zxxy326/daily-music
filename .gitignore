@@ -1,0 +1,25 @@
+# Gradle / Android
+.gradle/
+build/
+local.properties
+*.apk
+*.aab
+*.iml
+.idea/
+
+# Rust
+rust/**/target/
+**/*.rs.bk
+
+# Rust 产物（由 scripts/build.sh 生成）
+app/src/main/jniLibs/
+
+# 临时产物（上游参考克隆、调试截图等）
+.tmp/
+
+# 工作区本地记录
+.workbuddy-ai/
+
+# 系统
+.DS_Store
+Thumbs.db
