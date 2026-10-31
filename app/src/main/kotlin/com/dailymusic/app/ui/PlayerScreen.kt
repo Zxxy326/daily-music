@@ -82,6 +82,13 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.animation.core.Animatable
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.unit.IntOffset
+import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
+import androidx.compose.foundation.gestures.detectDragGestures
 
 // 歌词页固定深色（视觉稿第 ③ 屏就是这么定的），所以这套颜色不跟随系统。
 private val LyricSung = Color.White
@@ -121,7 +128,52 @@ fun PlayerScreen(onClose: () -> Unit, onOpenLyrics: () -> Unit) {
     var showComments by remember { mutableStateOf(false) }
     var showMore by remember { mutableStateOf(false) }
 
-    Box(Modifier.fillMaxSize().background(if (dark) Color.Black else Color(0xFFF2F2F4))) {
+    // 手势：下滑退出、左右滑切歌。
+    //
+    // 跟手位移用 Animatable 驱动：往下拖时整页跟着走，松手没到阈值就弹回去 ——
+    // 只做「松手才判定」的话，手指在屏幕上滑了半天画面纹丝不动，像没反应。
+    val dragY = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
+
+    Box(
+        Modifier
+            .fillMaxSize()
+            .offset { IntOffset(0, dragY.value.roundToInt()) }
+            .background(if (dark) Color.Black else Color(0xFFF2F2F4))
+            .pointerInput(Unit) {
+                val closeThreshold = 140.dp.toPx()
+                val swipeThreshold = 90.dp.toPx()
+                var dx = 0f
+                var dy = 0f
+                detectDragGestures(
+                    onDragStart = {
+                        dx = 0f
+                        dy = 0f
+                    },
+                    onDrag = { change, amount ->
+                        change.consume()
+                        dx += amount.x
+                        dy += amount.y
+                        // 只有「明显在往下拖」才跟手；横向滑是切歌，页面不该动。
+                        if (dy > 0f && abs(dy) > abs(dx)) {
+                            scope.launch { dragY.snapTo((dragY.value + amount.y).coerceAtLeast(0f)) }
+                        }
+                    },
+                    onDragEnd = {
+                        when {
+                            abs(dx) > abs(dy) && abs(dx) > swipeThreshold -> {
+                                if (dx > 0) PlayerManager.previous() else PlayerManager.next()
+                                scope.launch { dragY.animateTo(0f, spring()) }
+                            }
+
+                            dragY.value > closeThreshold -> onClose()
+                            else -> scope.launch { dragY.animateTo(0f, spring()) }
+                        }
+                    },
+                    onDragCancel = { scope.launch { dragY.animateTo(0f, spring()) } },
+                )
+            },
+    ) {
         // 背景：封面放大模糊 + 一层雾，让每首歌有自己的氛围色。
         RemoteImage(
             url = song.cover(480),

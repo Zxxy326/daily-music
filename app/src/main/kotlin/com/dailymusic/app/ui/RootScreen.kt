@@ -79,6 +79,10 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.togetherWith
 import androidx.compose.ui.text.style.TextAlign
 import kotlinx.coroutines.delay
+import androidx.compose.foundation.basicMarquee
+import androidx.compose.runtime.rememberCoroutineScope
+import com.dailymusic.app.data.Updater
+import kotlinx.coroutines.launch
 
 private data class Tab(val label: String, val icon: ImageVector)
 
@@ -149,6 +153,14 @@ fun RootScreen() {
     // 提前连上播放服务，把「服务冷启动 + 建连」的时间从第一次点歌里省掉。
     // 注意不要在这里 release：控制器要一直活着，退到后台才能继续播。
     LaunchedEffect(Unit) { PlayerManager.connect(context) }
+
+    // 启动后静默检查更新：延迟 3 秒，避开冷启动时一堆请求同时打出去。
+    // 失败完全静默（checkSilently 内部吞掉），不打扰用户。
+    LaunchedEffect(Unit) {
+        delay(3_000)
+        runCatching { Updater.checkSilently(context) }
+    }
+    val updateScope = rememberCoroutineScope()
 
     // 冷启动自动签到。概念版的权益按天计，漏一天就少一天畅听；
     // 放在这里而不是 Application 里，是因为它要等本地服务起来才有端口可用。
@@ -420,6 +432,13 @@ fun RootScreen() {
         ) {
             LyricsScreen(onClose = { lyricsOpen = false })
         }
+
+        // 更新提示压在所有页面之上（包括播放页 / 歌词页）。
+        UpdateDialog(
+            state = Updater.state,
+            onStart = { updateScope.launch { Updater.startOrRetry(context) } },
+            onDismiss = { Updater.dismiss() },
+        )
     }
 }
 
@@ -495,7 +514,6 @@ private fun MiniBar(song: Song?, onOpen: () -> Unit) {
         }
     }
 
-    val text = if (song != null) lyric else quotes[quoteIndex]
     val hasSong = song != null
 
     Row(
@@ -503,36 +521,81 @@ private fun MiniBar(song: Song?, onOpen: () -> Unit) {
             .fillMaxSize()
             .clip(RoundedCornerShape(20.dp))
             .then(if (hasSong) Modifier.clickable(onClick = onOpen) else Modifier)
-            .padding(horizontal = 4.dp),
+            .padding(horizontal = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (song != null) {
-            RemoteImage(
-                url = song.cover(120),
-                modifier = Modifier.size(38.dp),
-                shape = CircleShape,
-            )
-            Spacer(Modifier.width(9.dp))
-        }
-        // 换行/换句都走淡入淡出：歌词一句一句跳变会显得很生硬。
-        AnimatedContent(
-            targetState = text,
-            transitionSpec = {
-                fadeIn(tween(300)) togetherWith fadeOut(tween(180))
-            },
-            label = "mini-text",
-        ) { line ->
+        if (!hasSong) {
+            // 没歌时没有封面，一句话居中即可。
             Text(
-                text = line,
+                text = quotes[quoteIndex],
                 modifier = Modifier.fillMaxWidth(),
-                fontSize = if (hasSong) 12.sp else 11.5.sp,
-                fontWeight = if (hasSong) FontWeight.SemiBold else FontWeight.Normal,
+                fontSize = 11.5.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                textAlign = if (hasSong) TextAlign.Start else TextAlign.Center,
-                color = if (hasSong) colors.onSurface else colors.onSurfaceVariantSummary,
+                textAlign = TextAlign.Center,
+                color = colors.onSurfaceVariantSummary,
             )
+            return@Row
         }
+
+        // 歌词按字数对半劈开分列封面两侧：左边是开头（右对齐、贴着封面），
+        // 右边是结尾（左对齐、贴着封面）。整句读下来就是「开头 → 封面 → 结尾」，
+        // 像被中间那颗封面挡了一下。
+        //
+        // 两侧都显示整句的话，短句会在封面左右各出现一遍，看着像镜像 bug。
+        val half = (lyric.length + 1) / 2
+        LyricSide(
+            text = lyric.take(half),
+            align = TextAlign.End,
+            modifier = Modifier.weight(1f),
+            color = colors.onSurface,
+        )
+        Spacer(Modifier.width(6.dp))
+        // 封面居中且放大到 44dp：底栏内高 52dp，再大就贴边了。
+        RemoteImage(
+            url = song!!.cover(160),
+            modifier = Modifier.size(44.dp),
+            shape = CircleShape,
+        )
+        Spacer(Modifier.width(6.dp))
+        LyricSide(
+            text = lyric.takeLast(half),
+            align = TextAlign.Start,
+            modifier = Modifier.weight(1f),
+            color = colors.onSurface,
+        )
+    }
+}
+
+/** 底栏一侧的歌词：超长自动跑马灯，换句时淡入淡出。 */
+@Composable
+private fun LyricSide(
+    text: String,
+    align: TextAlign,
+    modifier: Modifier = Modifier,
+    color: Color,
+) {
+    // weight 必须挂在 AnimatedContent 上：挂在里面的 Text 上没用 ——
+    // AnimatedContent 自己是个普通子项，Row 会按「未加权」给它整行宽度，
+    // 两个 LyricSide 一挤，中间的封面就没了。
+    AnimatedContent(
+        targetState = text,
+        modifier = modifier,
+        transitionSpec = { fadeIn(tween(300)) togetherWith fadeOut(tween(180)) },
+        label = "mini-lyric",
+    ) { line ->
+        Text(
+            text = line,
+            modifier = Modifier
+                .fillMaxWidth()
+                // 跑马灯：只在文字溢出时滚动，短句保持静止，不会一直抖。
+                .basicMarquee(iterations = Int.MAX_VALUE, initialDelayMillis = 1_200),
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            textAlign = align,
+            color = color,
+        )
     }
 }
 
@@ -607,7 +670,7 @@ private fun GlassNavBar(
                 tab = Tabs[0],
                 selected = selected == 0,
                 onClick = { onSelect(0) },
-                modifier = Modifier.width(46.dp),
+                modifier = Modifier.size(44.dp),
             )
             // 播放条挤进中间：淡入 + 轻微放大，宽度由上面的 spring 负责。
             // 隐藏时 weight 仍占位，所以两个图标始终贴在胶囊两端，撑开的过程看起来
@@ -625,7 +688,7 @@ private fun GlassNavBar(
                 tab = Tabs[1],
                 selected = selected == 1,
                 onClick = { onSelect(1) },
-                modifier = Modifier.width(46.dp),
+                modifier = Modifier.size(44.dp),
             )
         }
     }
@@ -716,8 +779,8 @@ private fun GlassTab(
 
     Box(
         modifier = modifier
-            .fillMaxHeight()
-            .clip(RoundedCornerShape(24.dp))
+            // 正圆而不是圆角矩形：46×52 的矩形套 24dp 圆角出来是个椭圆，很丑。
+            .clip(CircleShape)
             .background(colors.primary.copy(alpha = 0.13f * progress))
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
