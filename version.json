@@ -1,6 +1,6 @@
 {
-  "version": "1.0.2",
-  "notes": "新增：播放页手势（下滑退出、左右滑切歌）、底栏歌词两侧轮播与居中封面、应用内在线更新。\n修复：底栏选中态椭圆、播放页点击区直角。",
+  "version": "1.0.3",
+  "notes": "测试更新链路：这条是临时内容，验证完会改回 1.0.2。",
   "apk": "https://github.com/Zxxy326/daily-music/releases/download/v1.0.2/daily-music-1.0.2.apk",
-  "size": 0
+  "size": 37429698
 }
