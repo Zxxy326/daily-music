@@ -1,6 +1,6 @@
 {
-  "version": "1.0.3",
-  "notes": "新增：\n· 歌词动效：WAVE 动感波光 / KTV 模式（横屏卡片，左右滑动切换）\n· 首页头像可直接进「我的」\n\n修复：\n· 首页头像与标题不在同一水平线\n· 底栏两颗按钮到胶囊两端的距离不一致（右侧空出一大块）",
-  "apk": "https://github.com/Zxxy326/daily-music/releases/download/v1.0.3/daily-music-1.0.3.apk",
-  "size": 37462466
+  "version": "1.0.4",
+  "notes": "新增：\n· 首页与「我的」左右滑动切换（横滑列表上不抢手势）\n· 底栏 3 秒自动隐藏，未播放时中间显示旋转黑胶 + 每日一言\n· 歌词动效改为横屏全屏沉浸，操作区 5 秒自动隐藏，轻点唤回\n\n优化：\n· WAVE 动感波光重做（宽光带 + 幽灵大字）\n· 在线更新改为 8 个镜像并发竞速，无需 VPN 也能检查/下载",
+  "apk": "https://github.com/Zxxy326/daily-music/releases/download/v1.0.4/daily-music-1.0.4.apk",
+  "size": 37495234
 }

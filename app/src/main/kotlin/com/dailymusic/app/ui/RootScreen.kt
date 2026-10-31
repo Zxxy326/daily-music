@@ -2,6 +2,7 @@ package com.dailymusic.app.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -58,6 +59,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.dailymusic.app.data.Auth
@@ -83,6 +85,18 @@ import androidx.compose.foundation.basicMarquee
 import androidx.compose.runtime.rememberCoroutineScope
 import com.dailymusic.app.data.Updater
 import kotlinx.coroutines.launch
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
+import kotlin.math.abs
 
 private data class Tab(val label: String, val icon: ImageVector)
 
@@ -196,6 +210,19 @@ fun RootScreen() {
         }
     }
 
+    // 底栏 3 秒无操作自动隐藏。
+    //
+    // 用「每次交互把 tick +1」而不是重置一个 Boolean：Boolean 从 true 变 true 不会触发
+    // LaunchedEffect 重启，计时器会一直按第一次的时间往下数。
+    var barVisible by remember { mutableStateOf(true) }
+    var barTick by remember { mutableIntStateOf(0) }
+    val wakeBar = { barVisible = true; barTick++ }
+    LaunchedEffect(barTick, barVisible) {
+        if (!barVisible) return@LaunchedEffect
+        delay(3_000)
+        barVisible = false
+    }
+
     val current = PlayerManager.current
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
@@ -215,7 +242,17 @@ fun RootScreen() {
     Box(
         Modifier
             .fillMaxSize()
-            .background(MiuixTheme.colorScheme.background),
+            .background(MiuixTheme.colorScheme.background)
+            // 任意按下都唤醒底栏。用 Initial 阶段「只看不消费」，
+            // 所以不会把点击从列表行/按钮手里抢走。
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        if (event.type == PointerEventType.Press) wakeBar()
+                    }
+                }
+            },
     ) {
         // 注意顺序：layerBackdrop 必须在 background 之前。
         // LayerBackdropNode 的 draw() 是「先 drawContent() 再录制」，
@@ -236,7 +273,45 @@ fun RootScreen() {
             Box(
                 Modifier
                     .fillMaxSize()
-                    .padding(start = if (wide) railWidth + 16.dp else 0.dp),
+                    .padding(start = if (wide) railWidth + 16.dp else 0.dp)
+                    // 左右滑切「首页 / 我的」。
+                    //
+                    // 只在「当前没有别的横滑可用」的位置生效：二级页、榜单详情、
+                    // 收藏/登录这些页面都关掉。判断方式是**看事件有没有被子节点消费** ——
+                    // 首页里「推荐歌单 / 各推荐模块」是 LazyRow，横滑会被它吃掉，
+                    // 手势就不会再触发切页；而在列表行、空白区上横滑没人消费，才切页。
+                    // 这正是「只有在现在不可左右滑动的位置」的语义。
+                    .pointerInput(tab, minePage, subPage, openRank, playerOpen, lyricsOpen) {
+                        val enabled = subPage == null && openRank == null &&
+                            minePage == -1 && !playerOpen && !lyricsOpen
+                        if (!enabled) return@pointerInput
+                        val threshold = 72.dp.toPx()
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            var dx = 0f
+                            var dy = 0f
+                            var consumed = false
+                            while (true) {
+                                val event = awaitPointerEvent(PointerEventPass.Final)
+                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                dx += change.positionChange().x
+                                dy += change.positionChange().y
+                                if (change.isConsumed) consumed = true
+                                if (!change.pressed) break
+                            }
+                            if (consumed) return@awaitEachGesture
+                            if (abs(dx) < threshold || abs(dx) < abs(dy) * 1.5f) {
+                                return@awaitEachGesture
+                            }
+                            // 左滑去「我的」，右滑回「首页」。
+                            if (dx < 0) {
+                                tab = 1
+                            } else {
+                                tab = 0
+                            }
+                            minePage = -1
+                        }
+                    },
             ) {
                 val rank = openRank
                 val sub = subPage
@@ -382,35 +457,42 @@ fun RootScreen() {
             // 往下开始由透明渐变为页面底色 —— 渐变的过渡段整段压在胶囊背后看不见，
             // 露出来的那截缝隙已经是纯底色。只做「整块透明→底色」会让最靠近胶囊的
             // 那几行反而最清楚（渐变顶端最透），等于没盖。
-            Box(
-                Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .height(navBottom + 88.dp)
-                    .background(
-                        Brush.verticalGradient(
-                            0f to Color.Transparent,
-                            0.46f to MiuixTheme.colorScheme.background,
-                            1f to MiuixTheme.colorScheme.background,
-                        ),
-                    ),
-            )
-            // 播放条并进底栏本身：底栏一颗胶囊里是「首页 · 播放条 · 我的」。
-            // 以前是「迷你条 + 底栏」两块玻璃上下摞着，占掉 140dp 还互相打架。
-            //
-            // 外面这层 Box 不能省：`align` 只有 BoxScope 里有，而 GlassNavBar 内部
-            // 拿不到外层的 BoxScope。少了它底栏会跑到屏幕**顶部**去。
-            Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
-                GlassNavBar(
-                    backdrop = backdrop,
-                    selected = tab,
-                    onSelect = {
-                        tab = it
-                        minePage = -1
-                    },
-                    song = current,
-                    onOpenPlayer = { playerOpen = true },
-                )
+            AnimatedVisibility(
+                visible = barVisible,
+                modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
+                enter = slideInVertically(animationSpec = tween(260)) { it } + fadeIn(tween(200)),
+                exit = slideOutVertically(animationSpec = tween(220)) { it } + fadeOut(tween(160)),
+            ) {
+                Box(Modifier.fillMaxWidth()) {
+                    Box(
+                        Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .height(navBottom + 88.dp)
+                            .background(
+                                Brush.verticalGradient(
+                                    0f to Color.Transparent,
+                                    0.46f to MiuixTheme.colorScheme.background,
+                                    1f to MiuixTheme.colorScheme.background,
+                                ),
+                            ),
+                    )
+                    Box(
+                        Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
+                    ) {
+                        GlassNavBar(
+                            backdrop = backdrop,
+                            selected = tab,
+                            onSelect = {
+                                tab = it
+                                minePage = -1
+                                wakeBar()
+                            },
+                            song = current,
+                            onOpenPlayer = { playerOpen = true; wakeBar() },
+                        )
+                    }
+                }
             }
         }
 
@@ -498,6 +580,45 @@ private fun glassBorder(dark: Boolean): Color =
  * 所以轮播「每日一言」。
  */
 /**
+ * 底栏空闲态的唱片。
+ *
+ * 纯 Canvas 画的黑胶：黑盘 + 三圈纹路 + 彩色标签 + 中心孔。
+ * 7 秒转一圈 —— 比这更快会晃眼，更慢就看不出在转。
+ */
+@Composable
+private fun Vinyl(size: Dp = 36.dp) {
+    val spin = rememberInfiniteTransition(label = "vinyl")
+    val angle by spin.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(7_000, easing = LinearEasing)),
+        label = "vinyl-angle",
+    )
+    Canvas(Modifier.size(size).graphicsLayer { rotationZ = angle }) {
+        val r = this.size.minDimension / 2f
+        drawCircle(Color(0xFF14141A))
+        repeat(3) { i ->
+            drawCircle(
+                color = Color.White.copy(alpha = 0.07f),
+                radius = r * (0.88f - i * 0.13f),
+                style = Stroke(1.dp.toPx()),
+            )
+        }
+        drawCircle(
+            brush = Brush.linearGradient(listOf(Color(0xFFFFC48A), Color(0xFFEF6F8E))),
+            radius = r * 0.30f,
+        )
+        drawCircle(Color(0xFF0C0C10), radius = r * 0.07f)
+        // 最外圈一道极淡的高光，压在玻璃上才不会糊成一团黑。
+        drawCircle(
+            color = Color.White.copy(alpha = 0.10f),
+            radius = r * 0.98f,
+            style = Stroke(1.5.dp.toPx()),
+        )
+    }
+}
+
+/**
  * 底栏中间的播放条插槽。
  *
  * 单独抽成一个函数有两个原因：一是 weight 要在 Row 里拿（这里只接收已经算好的 modifier）；
@@ -512,15 +633,16 @@ private fun MiniBarSlot(
     onOpenPlayer: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Box(modifier) {
-        AnimatedVisibility(
-            visible = expanded,
-            modifier = Modifier.fillMaxSize().padding(horizontal = 2.dp),
-            enter = fadeIn(tween(260, delayMillis = 110)) +
-                scaleIn(initialScale = 0.88f, animationSpec = tween(320)),
-            exit = fadeOut(tween(120)) + scaleOut(targetScale = 0.94f, animationSpec = tween(140)),
-        ) {
-            MiniBar(song, onOpenPlayer)
+    Box(modifier.padding(horizontal = 2.dp)) {
+        // 不能再用 AnimatedVisibility 包着 —— 它隐藏时连「没歌时的黑胶 + 每日一言」也一起
+        // 不组合了，中间就剩一大块空白。宽度由外面的 spring 负责，内容按有没有歌切换，
+        // 切换本身走 AnimatedContent 的淡入淡出。
+        AnimatedContent(
+            targetState = song != null,
+            transitionSpec = { fadeIn(tween(240)) togetherWith fadeOut(tween(160)) },
+            label = "mini-bar-content",
+        ) { hasSong ->
+            MiniBar(if (hasSong) song else null, onOpenPlayer)
         }
     }
 }
@@ -554,18 +676,22 @@ private fun MiniBar(song: Song?, onOpen: () -> Unit) {
             .fillMaxSize()
             .clip(RoundedCornerShape(20.dp))
             .then(if (hasSong) Modifier.clickable(onClick = onOpen) else Modifier)
-            .padding(horizontal = 2.dp),
+            // 左侧多留 6dp：空闲时黑胶紧贴首页那颗圆，看起来像挤在一起。
+            .padding(start = 6.dp, end = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (!hasSong) {
-            // 没歌时没有封面，一句话居中即可。
+            // 没歌时中间不能空着 —— 一颗慢慢转的黑胶 + 右边滚一句每日一言。
+            // 之前这里只有一行居中文字，两侧留白比内容还宽，看着像加载失败。
+            Vinyl(34.dp)
+            Spacer(Modifier.width(9.dp))
             Text(
                 text = quotes[quoteIndex],
-                modifier = Modifier.fillMaxWidth(),
-                fontSize = 11.5.sp,
+                modifier = Modifier
+                    .weight(1f)
+                    .basicMarquee(iterations = Int.MAX_VALUE, initialDelayMillis = 1_500),
+                fontSize = 11.sp,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
                 color = colors.onSurfaceVariantSummary,
             )
             return@Row
@@ -664,9 +790,9 @@ private fun GlassNavBar(
     // 把播放条挤进中间。宽度用 spring 过渡，所以按钮是被「推开」而不是瞬间跳位。
     val expanded = song != null
     val widthFraction by animateFloatAsState(
-        // 未播放时 0.45：两个 44dp 的图标 + 两侧 10dp 内边距 = 108dp，剩下的留白让胶囊
-        // 看起来是「一颗胶囊」而不是「一个框」。之前 0.26 只够刚好包住图标，绷得很紧。
-        targetValue = if (expanded) 0.72f else 0.45f,
+        // 未播放 0.52：两个 44dp 图标 + 两侧 10dp 内边距 = 108dp，中间再留 100dp 给
+        // 「黑胶 + 一句每日一言」，撑得满又不空。展开 0.74：两侧歌词各多出十几 dp。
+        targetValue = if (expanded) 0.74f else 0.56f,
         // stiffness 放软一点：260 大约 250ms 就到位，肉眼看只是「闪了一下」；
         // 180 + 0.75 阻尼能拖到 450ms 左右，还带一点回弹，才看得出是「撑开」。
         animationSpec = spring(dampingRatio = 0.75f, stiffness = 180f),

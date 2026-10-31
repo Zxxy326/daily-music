@@ -1,26 +1,29 @@
 package com.dailymusic.app.ui
 
+import android.content.pm.ActivityInfo
+import androidx.activity.compose.LocalActivity
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -31,43 +34,55 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.dailymusic.app.data.Library
 import com.dailymusic.app.data.Lyrics
 import com.dailymusic.app.data.Song
 import com.dailymusic.app.playback.PlayerManager
+import kotlinx.coroutines.delay
 import top.yukonga.miuix.kmp.basic.Text
 
 /**
- * 歌词动效（横屏卡片）。
+ * 歌词动效（横屏全屏）。
  *
- * 参考 QQ 音乐的「歌词动效」：一屏只有一张 16:9 的卡片，左右各露出邻卡的一条边，
- * 底部一排圆点。卡片自己就是完整的播放面板 —— 左下角歌名/歌手，右下角四个控制键，
- * 这样在动效页里不用退出去也能切歌。
+ * 参考 QQ 音乐的「歌词动效」：**整屏横过来**，一张卡片铺满，左右滑切下一张；
+ * 顶部不写模式名，操作区（返回 / 歌名 / 播放控制 / 圆点）5 秒不动就自动淡出，
+ * 轻点屏幕再唤回来。
  *
- * 这里只做两个效果（WAVE / KTV），都是纯 Compose 绘制，没有视频素材：
+ * 两个效果都是纯 Compose 绘制，没有视频素材：
  *
- * - **WAVE 动感波光**：封面重度模糊 + 青绿径向渐变打底，再叠五圈往外扩散的白色波纹，
- *   当前歌词居中，背后垫一份模糊的同款文字当「光晕」。
- * - **KTV 模式**：封面当画面（轻微模糊 + 压暗），歌名做成大字水印，歌词贴在底部逐字扫色。
+ * - **WAVE 动感波光**：模糊封面 + 青蓝罩打底，画 5 条**宽而柔**的光带往外推
+ *   （不是细圆环 —— 细环看起来像雷达扫描），歌词后面垫一层放大 2 倍的「幽灵字」。
+ * - **KTV 模式**：封面当画面（轻模糊 + 压暗），歌名做成大字水印，歌词贴底逐字扫色。
  *
- * 逐字扫色复用竖屏歌词页的 [sweepBrush]，所以两个模式的「唱到哪」永远是同一个基准。
+ * 逐字扫色复用竖屏歌词页的 [sweepBrush]，两个模式的「唱到哪」永远是同一个基准。
  */
 internal enum class LyricEffect(val label: String) {
     WAVE("WAVE 动感波光"),
@@ -81,182 +96,248 @@ internal fun LyricEffectScreen(
     position: Long,
     onClose: () -> Unit,
 ) {
-    val pager = rememberPagerState(pageCount = { LyricEffect.entries.size })
-    val effect = LyricEffect.entries[pager.currentPage.coerceIn(0, LyricEffect.entries.size - 1)]
+    val activity = LocalActivity.current
+    val view = LocalView.current
 
-    BoxWithConstraints(
+    // 强制横屏。MainActivity 在 manifest 里声明了 configChanges="orientation|screenSize…"，
+    // 所以旋转不会重建 Activity，动效页的状态不会丢。
+    DisposableEffect(activity) {
+        val previous = activity?.requestedOrientation
+        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        onDispose {
+            activity?.requestedOrientation =
+                previous ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
+    }
+
+    // 沉浸：藏掉状态栏和导航栏。手势条会以「临时浮层」的形式出现，滑一下能看到。
+    DisposableEffect(view) {
+        val window = activity?.window
+        val controller = window?.let { WindowCompat.getInsetsController(it, view) }
+        controller?.let {
+            it.hide(WindowInsetsCompat.Type.systemBars())
+            it.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
+        onDispose {
+            controller?.show(WindowInsetsCompat.Type.systemBars())
+        }
+    }
+
+    val pager = rememberPagerState(pageCount = { LyricEffect.entries.size })
+
+    // 操作区 5 秒自动隐藏。用 tick 自增来重置计时（Boolean true→true 不会重启 LaunchedEffect）。
+    var chromeVisible by remember { mutableStateOf(true) }
+    var chromeTick by remember { mutableIntStateOf(0) }
+    val wake = {
+        chromeVisible = true
+        chromeTick++
+    }
+    LaunchedEffect(chromeTick, chromeVisible) {
+        if (!chromeVisible) return@LaunchedEffect
+        delay(5_000)
+        chromeVisible = false
+    }
+    // 左右滑切换动效时把操作区叫回来：滑动不会触发「轻点」检测，
+    // 不叫的话用户换了一页却看不到歌名和播放键，会以为界面卡住了。
+    LaunchedEffect(pager.currentPage) { wake() }
+
+    Box(
         Modifier
             .fillMaxSize()
-            .background(Color(0xFF050507))
-            .statusBarsPadding()
-            .navigationBarsPadding(),
+            .background(Color.Black)
+            // 轻点唤回操作区。这里**不消费**任何事件，只观察按下→抬起的位移，
+            // 所以左右滑切卡片仍然由 pager 处理。
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    var moved = false
+                    var last = down.position
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                        if ((change.position - last).getDistance() > 18f) moved = true
+                        last = change.position
+                        if (!change.pressed) break
+                    }
+                    if (!moved) wake()
+                }
+            },
     ) {
-        // 卡片宽度 = 屏宽 - 左右各 22dp 的露出量；高度按 16:9 算。
-        // 用显式高度而不是 weight，卡片才能保持横屏比例而不是被拉成方形。
-        val cardHeight = (maxWidth - 44.dp) * 9f / 16f
-
-        Column(Modifier.fillMaxSize()) {
-            Row(
-                modifier = Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(
-                    modifier = Modifier.size(38.dp).clip(CircleShape).clickable(onClick = onClose),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    TintedIcon(AppIcons.ChevronDown, Color.White.copy(alpha = 0.9f), 24.dp)
-                }
-                Row(
-                    modifier = Modifier.weight(1f),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = "歌词动效 · ${effect.label}",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color.White,
-                    )
-                    Spacer(Modifier.width(5.dp))
-                    Gem()
-                }
-                Spacer(Modifier.size(38.dp))
-            }
-
-            Spacer(Modifier.weight(0.9f))
-
-            HorizontalPager(
-                state = pager,
-                modifier = Modifier.fillMaxWidth().height(cardHeight),
-                contentPadding = PaddingValues(horizontal = 22.dp),
-                pageSpacing = 12.dp,
-            ) { page ->
-                EffectCard(
-                    effect = LyricEffect.entries[page],
-                    song = song,
-                    lyrics = lyrics,
-                    position = position,
-                )
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                LyricEffect.entries.forEachIndexed { index, _ ->
-                    val active = pager.currentPage == index
-                    val w by animateDpAsState(if (active) 16.dp else 5.dp, label = "dot-w")
-                    Box(
-                        Modifier
-                            .padding(horizontal = 3.dp)
-                            .height(5.dp)
-                            .width(w)
-                            .clip(CircleShape)
-                            .background(if (active) Color.White else Color.White.copy(alpha = 0.26f)),
-                    )
-                }
-            }
-
-            // 这一页只有一个手势（左右滑），不写出来大部分人不会去试。
-            Spacer(Modifier.height(10.dp))
-            Text(
-                text = "左右滑动切换动效",
-                modifier = Modifier.fillMaxWidth(),
-                fontSize = 11.sp,
-                color = Color.White.copy(alpha = 0.28f),
-                textAlign = TextAlign.Center,
+        HorizontalPager(state = pager, modifier = Modifier.fillMaxSize()) { page ->
+            EffectPage(
+                effect = LyricEffect.entries[page],
+                song = song,
+                lyrics = lyrics,
+                position = position,
             )
+        }
 
-            Spacer(Modifier.weight(1f))
+        // 左上角返回，跟着操作区一起隐藏。
+        AnimatedVisibility(
+            visible = chromeVisible,
+            modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(10.dp),
+            enter = fadeIn(tween(220)),
+            exit = fadeOut(tween(200)),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.28f))
+                    .clickable(onClick = onClose),
+                contentAlignment = Alignment.Center,
+            ) {
+                TintedIcon(AppIcons.ArrowBack, Color.White, 20.dp)
+            }
+        }
+
+        // 底部操作区：歌名 + 控制键 + 圆点。
+        AnimatedVisibility(
+            visible = chromeVisible,
+            modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
+            enter = fadeIn(tween(260)),
+            exit = fadeOut(tween(220)),
+        ) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(start = 26.dp, end = 26.dp, bottom = 18.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                PagerDots(pager.currentPage)
+                Spacer(Modifier.height(10.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    RemoteImage(
+                        url = song.cover(160),
+                        modifier = Modifier.size(42.dp),
+                        shape = RoundedCornerShape(10.dp),
+                    )
+                    Spacer(Modifier.width(11.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            text = song.name,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = song.singer,
+                            fontSize = 10.5.sp,
+                            color = Color.White.copy(alpha = 0.55f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    ControlIcon(AppIcons.SkipPrevious, 20.dp) { PlayerManager.previous() }
+                    Spacer(Modifier.width(14.dp))
+                    PlayButton()
+                    Spacer(Modifier.width(14.dp))
+                    ControlIcon(AppIcons.SkipNext, 20.dp) { PlayerManager.next() }
+                    Spacer(Modifier.width(14.dp))
+                    ControlIcon(
+                        icon = if (Library.isFavorite(song.key)) AppIcons.Heart else AppIcons.HeartOutline,
+                        size = 18.dp,
+                    ) { Library.toggleFavorite(song) }
+                }
+            }
         }
     }
 }
 
-/** 标题右边那颗绿色宝石，纯装饰（对齐 QQ 动效页的会员标识）。 */
 @Composable
-private fun Gem() {
-    Box(
-        Modifier
-            .size(9.dp)
-            .rotate(45f)
-            .background(
-                Brush.linearGradient(listOf(Color(0xFF7BF5A8), Color(0xFF19B25C))),
-                RoundedCornerShape(2.dp),
-            ),
-    )
+private fun PagerDots(current: Int) {
+    Row(
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        LyricEffect.entries.forEachIndexed { index, _ ->
+            val active = current == index
+            Box(
+                Modifier
+                    .padding(horizontal = 3.dp)
+                    .height(5.dp)
+                    .width(if (active) 18.dp else 5.dp)
+                    .clip(CircleShape)
+                    .background(if (active) Color.White else Color.White.copy(alpha = 0.32f)),
+            )
+        }
+    }
 }
 
 @Composable
-private fun EffectCard(
+private fun PlayButton() {
+    val context = LocalContext.current
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .clickable { PlayerManager.toggle(context) },
+        contentAlignment = Alignment.Center,
+    ) {
+        TintedIcon(
+            icon = if (PlayerManager.isPlaying) AppIcons.Pause else AppIcons.Play,
+            tint = Color.White,
+            size = 26.dp,
+        )
+    }
+}
+
+@Composable
+private fun ControlIcon(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    size: androidx.compose.ui.unit.Dp,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier.size(38.dp).clip(CircleShape).clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        TintedIcon(icon, Color.White.copy(alpha = 0.92f), size)
+    }
+}
+
+// ---------------------------------------------------------------- 页面
+
+@Composable
+private fun EffectPage(
     effect: LyricEffect,
     song: Song,
     lyrics: Lyrics,
     position: Long,
 ) {
-    Box(
-        Modifier
-            .fillMaxSize()
-            .clip(RoundedCornerShape(20.dp))
-            .background(Color(0xFF0B0B10)),
-    ) {
-        when (effect) {
-            LyricEffect.WAVE -> {
-                WaveBackdrop(song)
-                WaveLyrics(
-                    lyrics = lyrics,
-                    song = song,
-                    position = position,
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .fillMaxWidth()
-                        .padding(horizontal = 18.dp)
-                        .padding(bottom = 30.dp),
-                )
-            }
-
-            LyricEffect.KTV -> {
-                KtvBackdrop(song)
-                KtvLyrics(
-                    lyrics = lyrics,
-                    song = song,
-                    position = position,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
-                        .padding(bottom = 40.dp),
-                )
-            }
-        }
-
-        CardChrome(song, Modifier.align(Alignment.BottomCenter))
+    when (effect) {
+        LyricEffect.WAVE -> WavePage(song, lyrics, position)
+        LyricEffect.KTV -> KtvPage(song, lyrics, position)
     }
 }
 
 // ---------------------------------------------------------------- WAVE
 
 /**
- * 波光底：模糊封面 → 青绿径向渐变 → 五圈扩散的白色波纹。
+ * 波光：模糊封面 → 青蓝径向罩 → 五条宽光带 → 幽灵大字 → 当前歌词。
  *
- * 波纹不是「一圈一圈从头画」：五个圆共用同一个 0..1 的相位、各自错开 1/5，
- * 所以看起来永远是连续不断地往外推，而不是一波停了再来一波。
+ * 和上一版最大的差别是**光带**：上一版是 1.2~5dp 的细圆环，像雷达扫描；
+ * QQ 那个是「水面上的光」，每条带宽约半径的 9%，还叠三层做出柔边。
  */
 @Composable
-private fun WaveBackdrop(song: Song) {
+private fun WavePage(song: Song, lyrics: Lyrics, position: Long) {
     Box(Modifier.fillMaxSize()) {
         RemoteImage(
-            url = song.cover(480),
-            modifier = Modifier.fillMaxSize().blur(26.dp),
+            url = song.cover(640),
+            modifier = Modifier.fillMaxSize().blur(42.dp),
             shape = RoundedCornerShape(0.dp),
             showFallbackIcon = false,
         )
         Box(
             Modifier.fillMaxSize().background(
                 Brush.radialGradient(
-                    0f to Color(0xFF5AE6EE).copy(alpha = 0.62f),
-                    0.45f to Color(0xFF0E8DA6).copy(alpha = 0.78f),
-                    1f to Color(0xFF032A35).copy(alpha = 0.92f),
+                    0f to Color(0xFFB9F7FA).copy(alpha = 0.62f),
+                    0.42f to Color(0xFF1FB2CB).copy(alpha = 0.76f),
+                    1f to Color(0xFF064F60).copy(alpha = 0.92f),
                 ),
             ),
         )
@@ -265,247 +346,187 @@ private fun WaveBackdrop(song: Song) {
         val phase by transition.animateFloat(
             initialValue = 0f,
             targetValue = 1f,
-            animationSpec = infiniteRepeatable(tween(5_200, easing = LinearEasing)),
+            animationSpec = infiniteRepeatable(tween(7_200, easing = LinearEasing)),
             label = "wave-phase",
         )
 
         Canvas(Modifier.fillMaxSize()) {
-            val c = center
-            val maxR = size.maxDimension * 0.62f
-            // 中心一团会呼吸的光，让波纹有「从水里透上来」的感觉。
+            // 圆心略偏左：QQ 那个效果的重心不在正中，正中的话会显得很「靶心」。
+            val c = Offset(size.width * 0.44f, size.height * 0.52f)
+            val maxR = size.maxDimension * 1.05f
+            // 中心一团柔光
             drawCircle(
                 brush = Brush.radialGradient(
                     listOf(Color.White.copy(alpha = 0.16f), Color.Transparent),
                     center = c,
-                    radius = maxR * 0.55f,
+                    radius = maxR * 0.5f,
                 ),
-                radius = maxR * 0.55f,
+                radius = maxR * 0.5f,
                 center = c,
             )
             repeat(5) { i ->
                 val p = (phase + i / 5f) % 1f
-                val r = maxR * (0.10f + 0.90f * p)
-                // 越往外越淡、越细：波纹扩散开之后本来就该散掉。
-                drawCircle(
-                    color = Color.White.copy(alpha = (1f - p) * 0.30f),
-                    radius = r,
-                    center = c,
-                    style = Stroke(width = (1.2f + 3.4f * (1f - p)).dp.toPx()),
-                )
+                val r = maxR * (0.14f + 0.86f * p)
+                val a = (1f - p) * 0.15f
+                // 一条宽光带 = 三层同色细带叠在一起，边缘自然过渡。
+                for (k in -1..1) {
+                    drawCircle(
+                        color = Color(0xFFCFFBFF).copy(alpha = a / 3f),
+                        radius = r + k * r * 0.05f,
+                        center = c,
+                        style = Stroke(width = (r * 0.09f).coerceAtLeast(2f)),
+                    )
+                }
             }
+        }
+
+        val line = currentLine(lyrics, position)
+        val text = line?.text?.takeIf { it.isNotBlank() } ?: song.name
+
+        // 幽灵大字：把当前句放大垫在后面，只留一点亮度。
+        // 这是 QQ 那个效果「有纵深」的关键 —— 只有前景一句话会显得很平。
+        Text(
+            text = text,
+            // 不设左右内边距：长句让它在屏幕边缘自然裁掉，才有「字比画面大」的感觉。
+            modifier = Modifier
+                .align(Alignment.Center)
+                .fillMaxWidth()
+                .blur(8.dp),
+            fontSize = 88.sp,
+            fontWeight = FontWeight.ExtraBold,
+            color = Color(0xFF04303A).copy(alpha = 0.26f),
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Clip,
+        )
+
+        Box(
+            Modifier
+                .align(Alignment.Center)
+                .fillMaxWidth()
+                .padding(horizontal = 40.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = text,
+                fontSize = waveSize(text),
+                fontWeight = FontWeight.ExtraBold,
+                lineHeight = waveSize(text) * 1.3f,
+                textAlign = TextAlign.Center,
+                color = Color.White.copy(alpha = 0.55f),
+                modifier = Modifier.blur(12.dp),
+            )
+            BasicText(
+                text = text,
+                style = TextStyle(
+                    brush = line?.let { sweepBrush(it, position) } ?: SolidColor(Color.White),
+                    fontSize = waveSize(text),
+                    lineHeight = waveSize(text) * 1.3f,
+                    fontWeight = FontWeight.ExtraBold,
+                    textAlign = TextAlign.Center,
+                ),
+            )
         }
     }
 }
 
-@Composable
-private fun WaveLyrics(
-    lyrics: Lyrics,
-    song: Song,
-    position: Long,
-    modifier: Modifier = Modifier,
-) {
-    val line = currentLine(lyrics, position)
-    val text = line?.text?.takeIf { it.isNotBlank() } ?: song.name
-    val size = when {
-        text.length <= 8 -> 25.sp
-        text.length <= 14 -> 20.sp
-        else -> 17.sp
-    }
-
-    Box(modifier, contentAlignment = Alignment.Center) {
-        // 光晕：同一句模糊一份垫在后面。QQ 的波光歌词是「发光」的，不是单纯加粗。
-        Text(
-            text = text,
-            fontSize = size,
-            fontWeight = FontWeight.ExtraBold,
-            lineHeight = size * 1.32f,
-            textAlign = TextAlign.Center,
-            color = Color.White.copy(alpha = 0.42f),
-            modifier = Modifier.blur(13.dp),
-        )
-        BasicText(
-            text = text,
-            style = TextStyle(
-                brush = line?.let { sweepBrush(it, position) } ?: SolidColor(Color.White),
-                fontSize = size,
-                lineHeight = size * 1.32f,
-                fontWeight = FontWeight.ExtraBold,
-                textAlign = TextAlign.Center,
-            ),
-        )
-    }
+private fun waveSize(text: String) = when {
+    text.length <= 6 -> 48.sp
+    text.length <= 10 -> 40.sp
+    text.length <= 18 -> 32.sp
+    else -> 26.sp
 }
 
 // ---------------------------------------------------------------- KTV
 
 /**
- * KTV 底：封面当画面，轻微模糊 + 压暗，再压一行半透明的歌名水印。
+ * KTV：封面当画面（轻模糊 + 压暗），歌名做大字水印，歌词贴底逐字扫色。
  *
- * 不把封面彻底模糊掉 —— KTV 模式的味道就在「看得见画面」，
- * 全靠一层 45% 的黑罩保证白字读得出来。
+ * 不把封面彻底模糊掉 —— KTV 的味道就在「看得见画面」，靠一层黑罩保证白字读得出来。
  */
 @Composable
-private fun KtvBackdrop(song: Song) {
+private fun KtvPage(song: Song, lyrics: Lyrics, position: Long) {
     Box(Modifier.fillMaxSize()) {
         RemoteImage(
-            url = song.cover(480),
-            modifier = Modifier.fillMaxSize().blur(2.dp),
+            url = song.cover(640),
+            modifier = Modifier.fillMaxSize().blur(3.dp),
             shape = RoundedCornerShape(0.dp),
             showFallbackIcon = false,
         )
         Box(
             Modifier.fillMaxSize().background(
                 Brush.verticalGradient(
-                    0f to Color.Black.copy(alpha = 0.42f),
-                    0.45f to Color.Black.copy(alpha = 0.26f),
-                    1f to Color.Black.copy(alpha = 0.62f),
+                    0f to Color.Black.copy(alpha = 0.50f),
+                    0.45f to Color.Black.copy(alpha = 0.30f),
+                    1f to Color.Black.copy(alpha = 0.72f),
                 ),
             ),
         )
         Text(
             text = song.name,
-            // 水印往上抬 18%：它压在卡片正中时会和底部那行歌词挤在一起。
             modifier = Modifier
                 .align(Alignment.Center)
-                .offset(y = (-18).dp)
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp),
-            fontSize = 30.sp,
+                .padding(horizontal = 30.dp),
+            fontSize = 58.sp,
             fontWeight = FontWeight.ExtraBold,
-            letterSpacing = 3.sp,
-            color = Color.White.copy(alpha = 0.20f),
+            letterSpacing = 5.sp,
+            color = Color.White.copy(alpha = 0.18f),
             textAlign = TextAlign.Center,
             maxLines = 1,
             overflow = TextOverflow.Clip,
         )
-    }
-}
 
-@Composable
-private fun KtvLyrics(
-    lyrics: Lyrics,
-    song: Song,
-    position: Long,
-    modifier: Modifier = Modifier,
-) {
-    val line = currentLine(lyrics, position)
-    val text = line?.text?.takeIf { it.isNotBlank() } ?: song.name
-    val size = when {
-        text.length <= 10 -> 18.sp
-        text.length <= 18 -> 16.sp
-        else -> 14.sp
-    }
+        val line = currentLine(lyrics, position)
+        val text = line?.text?.takeIf { it.isNotBlank() } ?: song.name
 
-    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(contentAlignment = Alignment.Center) {
-            Text(
-                text = text,
-                fontSize = size,
-                fontWeight = FontWeight.ExtraBold,
-                lineHeight = size * 1.3f,
-                textAlign = TextAlign.Center,
-                color = Color.White.copy(alpha = 0.30f),
-                modifier = Modifier.blur(9.dp),
-            )
-            BasicText(
-                text = text,
-                style = TextStyle(
-                    brush = line?.let { sweepBrush(it, position) } ?: SolidColor(Color.White),
-                    fontSize = size,
-                    lineHeight = size * 1.3f,
-                    fontWeight = FontWeight.ExtraBold,
-                    textAlign = TextAlign.Center,
-                ),
-            )
-        }
-        line?.translation?.takeIf { it.isNotBlank() }?.let { tr ->
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = tr,
-                fontSize = 9.5.sp,
-                color = Color.White.copy(alpha = 0.62f),
-                textAlign = TextAlign.Center,
-                maxLines = 2,
-            )
-        }
-    }
-}
-
-// ---------------------------------------------------------------- 卡片内的迷你控制条
-
-@Composable
-private fun CardChrome(song: Song, modifier: Modifier = Modifier) {
-    val context = LocalContext.current
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            // 底部压一层渐变，白色小字压在浅色封面上才读得清。
-            .background(
-                Brush.verticalGradient(
-                    listOf(Color.Transparent, Color.Black.copy(alpha = 0.45f)),
-                ),
-            )
-            .padding(start = 9.dp, end = 6.dp, top = 14.dp, bottom = 7.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        RemoteImage(
-            url = song.cover(120),
-            modifier = Modifier.size(26.dp),
-            shape = RoundedCornerShape(7.dp),
-        )
-        Spacer(Modifier.width(7.dp))
-        Column(Modifier.weight(1f)) {
-            Text(
-                text = song.name,
-                fontSize = 9.5.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = Color.White,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = song.singer,
-                fontSize = 8.sp,
-                color = Color.White.copy(alpha = 0.55f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        EffectControl(AppIcons.SkipPrevious, 15.dp) { PlayerManager.previous() }
-        Box(
-            modifier = Modifier
-                .size(26.dp)
-                .clip(CircleShape)
-                .clickable { PlayerManager.toggle(context) },
-            contentAlignment = Alignment.Center,
+        Column(
+            Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .padding(horizontal = 40.dp)
+                .padding(bottom = 118.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            TintedIcon(
-                icon = if (PlayerManager.isPlaying) AppIcons.Pause else AppIcons.Play,
-                tint = Color.White,
-                size = 14.dp,
-            )
+            Box(contentAlignment = Alignment.Center) {
+                Text(
+                    text = text,
+                    fontSize = ktvSize(text),
+                    fontWeight = FontWeight.ExtraBold,
+                    lineHeight = ktvSize(text) * 1.3f,
+                    textAlign = TextAlign.Center,
+                    color = Color.White.copy(alpha = 0.32f),
+                    modifier = Modifier.blur(10.dp),
+                )
+                BasicText(
+                    text = text,
+                    style = TextStyle(
+                        brush = line?.let { sweepBrush(it, position) } ?: SolidColor(Color.White),
+                        fontSize = ktvSize(text),
+                        lineHeight = ktvSize(text) * 1.3f,
+                        fontWeight = FontWeight.ExtraBold,
+                        textAlign = TextAlign.Center,
+                    ),
+                )
+            }
+            line?.translation?.takeIf { it.isNotBlank() }?.let { tr ->
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = tr,
+                    fontSize = 13.sp,
+                    color = Color.White.copy(alpha = 0.66f),
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                )
+            }
         }
-        EffectControl(AppIcons.SkipNext, 15.dp) { PlayerManager.next() }
-        EffectControl(
-            icon = if (Library.isFavorite(song.key)) AppIcons.Heart else AppIcons.HeartOutline,
-            size = 13.dp,
-        ) { Library.toggleFavorite(song) }
     }
 }
 
-@Composable
-private fun EffectControl(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    size: androidx.compose.ui.unit.Dp,
-    onClick: () -> Unit,
-) {
-    Box(
-        // 触摸区固定 26dp 并裁圆：卡片里控件很小，方块涟漪会糊成一片。
-        modifier = Modifier.size(26.dp).clip(CircleShape).clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        TintedIcon(icon, Color.White.copy(alpha = 0.9f), size)
-    }
+private fun ktvSize(text: String) = when {
+    text.length <= 10 -> 34.sp
+    text.length <= 18 -> 28.sp
+    else -> 22.sp
 }
 
 /** 当前该高亮的那一行；间奏时 `anchorIndex` 会停在上一句，正好符合「上一句一直亮」。 */

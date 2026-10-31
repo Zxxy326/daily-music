@@ -14,6 +14,11 @@ import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.channels.Channel
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * 在线更新。
@@ -40,25 +45,49 @@ object Updater {
      * 走代理 / 公司出口 IP 很容易被别人吃光 —— 实测直接回 403，
      * 那样更新功能就等于没有。
      */
+    /**
+     * `version.json` 的候选地址。
+     *
+     * 顺序不重要 —— [fetchLatest] 是**并发竞速**，谁先回来用谁，所以这里只要把
+     * 「国内能直连的」和「需要梯子的」都列上，任何网络环境下总有一个能通：
+     *
+     * | 源 | 国内直连 |
+     * |---|---|
+     * | `raw.gitmirror.com` | ✅ 专为 raw 做的镜像 |
+     * | `cdn.jsdelivr.net` | ✅ 有国内节点 |
+     * | `ghfast.top` / `gh-proxy.com` / `ghproxy.net` | 大多数时候 ✅ |
+     * | `github.moeyy.xyz` / `gh.llkk.cc` | 备选，轮换可用 |
+     * | `raw.githubusercontent.com` | ❌ 需要梯子 |
+     */
     private val RawBases = listOf(
-        "https://raw.githubusercontent.com/$REPO/main/version.json",
+        "https://raw.gitmirror.com/$REPO/main/version.json",
+        "https://cdn.jsdelivr.net/gh/$REPO@main/version.json",
         "https://ghfast.top/https://raw.githubusercontent.com/$REPO/main/version.json",
         "https://gh-proxy.com/https://raw.githubusercontent.com/$REPO/main/version.json",
-        "https://cdn.jsdelivr.net/gh/$REPO@main/version.json",
+        "https://ghproxy.net/https://raw.githubusercontent.com/$REPO/main/version.json",
+        "https://github.moeyy.xyz/https://raw.githubusercontent.com/$REPO/main/version.json",
+        "https://gh.llkk.cc/https://raw.githubusercontent.com/$REPO/main/version.json",
+        "https://raw.githubusercontent.com/$REPO/main/version.json",
     )
 
-    /** 兜底：GitHub API。 */
+    /** 兜底：GitHub API（未认证 60 次/小时，只在前面的都失败时才用）。 */
     private val ApiBases = listOf(
         "https://api.github.com",
         "https://ghfast.top/https://api.github.com",
+        "https://gh-proxy.com/https://api.github.com",
     )
 
-    /** 下载前缀：空串 = 直连。 */
+    /**
+     * 下载前缀：空串 = 直连官方。
+     *
+     * 和检查一样是「并发探路、谁先通用谁」，所以顺序只影响探路时的排队，不影响可用性。
+     */
     private val DownloadPrefixes = listOf(
-        "",
         "https://ghfast.top/",
         "https://gh-proxy.com/",
         "https://ghproxy.net/",
+        "https://github.moeyy.xyz/",
+        "",
     )
 
     data class UpdateInfo(
@@ -112,7 +141,9 @@ object Updater {
         Log.w(TAG, "checkSilently start")
         if (state is State.Downloading) return false
         val current = currentVersionName(context)
-        val info = fetchLatest() ?: return false
+        // 总超时兜底：某个镜像「握手很快、body 一点点往外吐」时，单次 readTimeout 会被
+        // 每次 read 重置，检查能拖十几秒。这里直接给整次检查一个上限，超时就当没有更新。
+        val info = withTimeoutOrNull(12_000) { fetchLatest() } ?: return false
         Log.w(TAG, "current=$current remote=${info.version}")
         if (compareVersion(info.version, current) <= 0) return false
         if (info.version == dismissedVersion) return false
@@ -135,12 +166,20 @@ object Updater {
     // ---------------- 检查 ----------------
 
     private suspend fun fetchLatest(): UpdateInfo? = withContext(Dispatchers.IO) {
-        // 1) version.json
-        for (url in RawBases) {
-            Log.w(TAG, "try $url")
-            val text = runCatching { readText(url, 8_000) }
-                .onFailure { Log.w(TAG, "raw failed: ${it.javaClass.simpleName}") }
-                .getOrNull() ?: continue
+        // 1) version.json —— **并发竞速**，不排队。
+        //
+        // 之前是 for 循环逐个试、每个 8s 超时：国内没梯子时前两个源必然超时，
+        // 光「检查更新」就要干等 16s，用户以为卡死了。现在所有源同时发，
+        // 谁先回用谁，总耗时 = 最快的那个（通常 0.5~2s）。
+        val texts = race(RawBases.map { url ->
+            {
+                Log.w(TAG, "try $url")
+                // JSON 只有几百字节，5s 读不完就是这条链路有问题，别再等。
+                readText(url, 5_000)
+            }
+        }, overallTimeoutMs = 10_000)
+
+        for (text in texts) {
             val o = runCatching { JSONObject(text) }.getOrNull() ?: continue
             val ver = o.str("version").trim().removePrefix("v")
             val apk = o.str("apk").ifBlank {
@@ -229,47 +268,145 @@ object Updater {
         val out = File(dir, "daily-music-${info.version}.apk")
         out.delete()
 
-        for (prefix in DownloadPrefixes) {
-            val url = prefix + info.apkUrl
-            val ok = runCatching {
-                val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-                    // 走系统默认代理（可能有 VPN / 代理工具），这里**不能** NO_PROXY：
-                    // 下载的是外网资源，和打本机服务不是一回事。
-                    connectTimeout = 12_000
-                    readTimeout = 20_000
-                    instanceFollowRedirects = true
-                    setRequestProperty("User-Agent", "DailyMusic-Updater")
-                }
-                try {
-                    if (conn.responseCode !in 200..299) return@runCatching false
-                    val total = conn.contentLengthLong
-                    var read = 0L
-                    conn.inputStream.use { input ->
-                        out.outputStream().use { sink ->
-                            val buf = ByteArray(64 * 1024)
-                            while (true) {
-                                val n = input.read(buf)
-                                if (n <= 0) break
-                                sink.write(buf, 0, n)
-                                read += n
-                                if (total > 0) {
-                                    val p = (read.toFloat() / total).coerceIn(0f, 1f)
-                                    state = State.Downloading(info, p)
-                                }
-                            }
-                        }
-                    }
-                    // 大小对不上就是下了一半（镜像限流很常见），当失败处理换下一个源。
-                    total <= 0 || read == total
-                } finally {
-                    conn.disconnect()
-                }
-            }.getOrDefault(false)
+        val urls = DownloadPrefixes.map { it + info.apkUrl }.distinct()
 
-            if (ok && out.length() > 0) return@withContext out
+        // 并发探路：五个源同时发请求，谁先回 200 就从谁下。
+        // 逐个试的话，第一个源（国内经常不通）会把 12s 连接超时全吃掉。
+        val first = raceOpen(urls, 7_000)
+
+        if (first != null && streamToFile(first.second, out, info)) {
+            return@withContext out
+        }
+        out.delete()
+
+        // 探路的那条断了就按顺序把剩下的补一遍。
+        for (url in urls) {
+            if (url == first?.first) continue
+            Log.w(TAG, "download fallback $url")
+            val conn = runCatching { openConn(url, 10_000) }.getOrNull() ?: continue
+            if (streamToFile(conn, out, info)) return@withContext out
             out.delete()
         }
         null
+    }
+
+    /**
+     * 并发开连接，返回**最先连通**的那一条（其余立刻关掉）。
+     *
+     * 只发请求头不读 body，所以探路本身很快；返回的 connection 直接交给 [streamToFile]
+     * 继续读，等于省掉了一次重复的握手。
+     */
+    private suspend fun raceOpen(
+        urls: List<String>,
+        timeoutMs: Int,
+    ): Pair<String, HttpURLConnection>? = coroutineScope {
+        val wins = Channel<Pair<String, HttpURLConnection>>(Channel.UNLIMITED)
+        val claimed = AtomicBoolean(false)
+        val jobs = urls.map { url ->
+            launch(Dispatchers.IO) {
+                val conn = runCatching { openConn(url, timeoutMs) }.getOrNull() ?: return@launch
+                if (claimed.compareAndSet(false, true)) {
+                    wins.send(url to conn)
+                } else {
+                    runCatching { conn.disconnect() }
+                }
+            }
+        }
+        val result = withTimeoutOrNull(timeoutMs + 2_000L) { wins.receive() }
+        jobs.forEach { it.cancel() }
+        wins.close()
+        result
+    }
+
+    /** 打开并确认是 200；失败返回 null（连接已经关掉，不会漏 socket）。 */
+    private fun openConn(url: String, timeoutMs: Int): HttpURLConnection? {
+        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+            // 走系统默认代理（可能有 VPN / 代理工具），这里**不能** NO_PROXY：
+            // 下载的是外网资源，和打本机服务不是一回事。
+            connectTimeout = timeoutMs
+            readTimeout = 20_000
+            instanceFollowRedirects = true
+            setRequestProperty("User-Agent", "DailyMusic-Updater")
+        }
+        return try {
+            val code = conn.responseCode
+            Log.w(TAG, "probe $url -> HTTP $code")
+            if (code in 200..299) conn else null.also { conn.disconnect() }
+        } catch (e: Throwable) {
+            runCatching { conn.disconnect() }
+            null
+        }
+    }
+
+    /** 把一条已连通的 connection 读进文件；大小对不上算失败（镜像限流常给半截）。 */
+    private fun streamToFile(conn: HttpURLConnection, out: File, info: UpdateInfo): Boolean {
+        return try {
+            val total = conn.contentLengthLong
+            var read = 0L
+            conn.inputStream.use { input ->
+                out.outputStream().use { sink ->
+                    val buf = ByteArray(64 * 1024)
+                    while (true) {
+                        val n = input.read(buf)
+                        if (n <= 0) break
+                        sink.write(buf, 0, n)
+                        read += n
+                        if (total > 0) {
+                            state = State.Downloading(info, (read.toFloat() / total).coerceIn(0f, 1f))
+                        }
+                    }
+                }
+            }
+            val ok = total <= 0 || read == total
+            if (!ok) Log.w(TAG, "incomplete: $read / $total")
+            ok && read > 0
+        } catch (e: Throwable) {
+            Log.w(TAG, "stream failed: ${e.javaClass.simpleName}")
+            false
+        } finally {
+            runCatching { conn.disconnect() }
+        }
+    }
+
+    /**
+     * 并发跑一组请求，收集「先回来的几个」。
+     *
+     * 拿到第一个成功后再多等 1.2s 收其他源的结果 —— 万一第一个返回的是镜像的错误页
+     * （200 + HTML），调用方还能用第二个去解析。总时长封顶 [overallTimeoutMs]。
+     */
+    private suspend fun race(
+        tasks: List<suspend () -> String?>,
+        overallTimeoutMs: Long,
+    ): List<String> = coroutineScope {
+        // 只把**成功**的结果送进来。送 null 的话 `withTimeoutOrNull { receive() }`
+        // 收到 null 会和「超时」长得一模一样，循环会被一次失败直接打断。
+        val channel = Channel<String>(Channel.UNLIMITED)
+        val jobs = tasks.map { task ->
+            launch(Dispatchers.IO) {
+                runCatching { task() }.getOrNull()?.let { channel.send(it) }
+            }
+        }
+        val results = mutableListOf<String>()
+        val start = System.currentTimeMillis()
+        var firstAt = 0L
+        while (true) {
+            val now = System.currentTimeMillis()
+            // 拿到第一条之后最多再等 0.6s 收备胎：万一第一条是镜像的错误页，还能用第二条。
+            val limit = if (firstAt == 0L) {
+                start + overallTimeoutMs
+            } else {
+                minOf(firstAt + 600L, start + overallTimeoutMs)
+            }
+            val remain = limit - now
+            if (remain <= 0) break
+            val text = withTimeoutOrNull(remain) { channel.receive() } ?: break
+            results.add(text)
+            if (firstAt == 0L) firstAt = System.currentTimeMillis()
+            if (results.size >= 2) break
+        }
+        jobs.forEach { it.cancel() }
+        channel.close()
+        results
     }
 
     // ---------------- 安装 ----------------

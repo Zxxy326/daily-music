@@ -853,3 +853,34 @@ claim=0/131001   upgrade=0/297002   msg=已经领取过升级vip奖励
 implicit receiver」。抽成独立的 `MiniBarSlot` 函数（weight 由调用方传入）即可。
 
 版本 1.0.3（versionCode 5），tag v1.0.3 + GitHub Release 已发，version.json 同步。
+
+### 11.15 滑动手势 / 底栏自动隐藏 / 动效横屏 / 更新多镜像（2026-10-31）
+
+**首页 ↔ 我的 左右滑。** 判断依据是「事件有没有被子节点消费」：在
+`awaitEachGesture` 里读 `PointerEventPass.Final`，只要有一段被消费（说明 LazyRow 在横滑）
+就不切页。于是列表行、空白区横滑会切页，推荐歌单/模块卡片上横滑仍然是滚那一行。
+
+**底栏 3 秒自动隐藏 + 空闲黑胶。**
+- 用 `barTick` 自增重置计时（Boolean true→true 不会重启 `LaunchedEffect`）；
+- 根 Box 用 `PointerEventPass.Initial` 只观察 press、不消费，所以任意点击都能唤醒底栏，
+  又不会把点击从列表行手里抢走；
+- 空闲态从「一行居中的每日一言」改成「旋转黑胶（Canvas）+ 跑马灯短句」，宽度 0.45 → 0.56。
+- **坑**：`AnimatedVisibility` 隐藏时连内容一起不组合，空闲态会变成一大块空白 ——
+  内容改用 `AnimatedContent` 按 `song != null` 切换。
+
+**歌词动效横屏全屏沉浸。**
+- `requestedOrientation = SENSOR_LANDSCAPE` + `WindowInsetsControllerCompat.hide(systemBars())`；
+  MainActivity 已声明 `configChanges`，旋转不重建、状态不丢。
+- 去掉顶部「歌词动效 · WAVE」标题；操作区（返回/歌名/控制/圆点）5 秒淡出，轻点唤回
+  （同样只观察不消费，pager 的横滑不受影响）。
+- **WAVE 重做**：上一版是 1~5dp 细圆环（像雷达扫描），改成每条带宽 ≈ 半径 9% 的宽光带，
+  三层叠加做柔边；背后加一份 88sp、26% 的「幽灵字」。
+
+**在线更新：8 源并发竞速。**
+- `version.json` 从「逐个试、每个 8s 超时」改成同时打 8 个源，谁先回用谁（raw.gitmirror /
+  jsdelivr / ghfast / gh-proxy / ghproxy.net / moeyy / llkk / 官方 raw）。
+- 下载同样先并发探路（只建连不读），拿最先 200 的那条直接流式写入。
+- **坑**：`withTimeoutOrNull { channel.receive() }` 收到 `null` 和超时无法区分，
+  往 channel 里送 `null` 会让循环被一次失败直接打断 —— 只送成功结果。
+
+版本 1.0.4（versionCode 6）。
