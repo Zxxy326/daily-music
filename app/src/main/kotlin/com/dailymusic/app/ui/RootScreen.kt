@@ -302,6 +302,11 @@ fun RootScreen() {
                         onOpenPlaylistSquare = { subPage = SubPage.PlaylistSquare },
                         onOpenRecognize = { subPage = SubPage.Recognize },
                         onOpenPlaylist = { subPage = SubPage.PlaylistDetail(it) },
+                        // 头像 = 「我的」入口，和底栏右侧那颗是同一个落点。
+                        onOpenMine = {
+                            tab = 1
+                            minePage = -1
+                        },
                     )
 
                     else -> when (minePage) {
@@ -492,6 +497,34 @@ private fun glassBorder(dark: Boolean): Color =
  * 没歌在放的时候不能空着，也不能点（播放页没有当前曲时会渲染成一片空白），
  * 所以轮播「每日一言」。
  */
+/**
+ * 底栏中间的播放条插槽。
+ *
+ * 单独抽成一个函数有两个原因：一是 weight 要在 Row 里拿（这里只接收已经算好的 modifier）；
+ * 二是 `AnimatedVisibility` 在 Row 的 lambda 里会被解析成 `RowScope.AnimatedVisibility`，
+ * 包进 Box 之后就拿不到 RowScope 了，编译期会报「cannot be called in this context
+ * with an implicit receiver」。放到函数里就回到普通的那一个重载。
+ */
+@Composable
+private fun MiniBarSlot(
+    expanded: Boolean,
+    song: Song?,
+    onOpenPlayer: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(modifier) {
+        AnimatedVisibility(
+            visible = expanded,
+            modifier = Modifier.fillMaxSize().padding(horizontal = 2.dp),
+            enter = fadeIn(tween(260, delayMillis = 110)) +
+                scaleIn(initialScale = 0.88f, animationSpec = tween(320)),
+            exit = fadeOut(tween(120)) + scaleOut(targetScale = 0.94f, animationSpec = tween(140)),
+        ) {
+            MiniBar(song, onOpenPlayer)
+        }
+    }
+}
+
 @Composable
 private fun MiniBar(song: Song?, onOpen: () -> Unit) {
     val colors = MiuixTheme.colorScheme
@@ -631,7 +664,9 @@ private fun GlassNavBar(
     // 把播放条挤进中间。宽度用 spring 过渡，所以按钮是被「推开」而不是瞬间跳位。
     val expanded = song != null
     val widthFraction by animateFloatAsState(
-        targetValue = if (expanded) 0.67f else 0.26f,
+        // 未播放时 0.45：两个 44dp 的图标 + 两侧 10dp 内边距 = 108dp，剩下的留白让胶囊
+        // 看起来是「一颗胶囊」而不是「一个框」。之前 0.26 只够刚好包住图标，绷得很紧。
+        targetValue = if (expanded) 0.72f else 0.45f,
         // stiffness 放软一点：260 大约 250ms 就到位，肉眼看只是「闪了一下」；
         // 180 + 0.75 阻尼能拖到 450ms 左右，还带一点回弹，才看得出是「撑开」。
         animationSpec = spring(dampingRatio = 0.75f, stiffness = 180f),
@@ -662,7 +697,11 @@ private fun GlassNavBar(
                 )
                 .background(glassTint(dark), shape)
                 .border(1.dp, glassBorder(dark), shape)
-                .padding(horizontal = 6.dp, vertical = 6.dp),
+                // 内边距四边必须一致：胶囊高 64dp - 上下各 10dp = 44dp，正好等于图标按钮的
+                // 尺寸，于是选中态那颗圆离左/上/下/右四个边都是 10dp。
+                // 之前是「左右 6dp + 上下 6dp + 4dp 余量」→ 圆离左边 6dp、离上下 10dp，
+                // 看着像往左上角挤；两个按钮里只有一个带高亮时，这种偏差特别显眼。
+                .padding(horizontal = 10.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             // 左：首页；中：播放条；右：我的。
@@ -673,17 +712,18 @@ private fun GlassNavBar(
                 modifier = Modifier.size(44.dp),
             )
             // 播放条挤进中间：淡入 + 轻微放大，宽度由上面的 spring 负责。
-            // 隐藏时 weight 仍占位，所以两个图标始终贴在胶囊两端，撑开的过程看起来
-            // 就是「胶囊变长、按钮被推开」。
-            AnimatedVisibility(
-                visible = expanded,
-                modifier = Modifier.weight(1f).fillMaxHeight().padding(horizontal = 2.dp),
-                enter = fadeIn(tween(260, delayMillis = 110)) +
-                    scaleIn(initialScale = 0.88f, animationSpec = tween(320)),
-                exit = fadeOut(tween(120)) + scaleOut(targetScale = 0.94f, animationSpec = tween(140)),
-            ) {
-                MiniBar(song, onOpenPlayer)
-            }
+            //
+            // weight 必须挂在外层 Box 上，不能直接挂 AnimatedVisibility：
+            // 后者隐藏时会把自身测成 0 宽（无视 weight 给的固定宽度），Row 按实际宽度
+            // 依次排布，右侧那颗图标就会紧跟到左边那颗后面 —— 表现为「胶囊右边空出一大块、
+            // 两个按钮到两端的距离一个 10dp 一个 50dp」。中间留一个真实占位的 Box 才能让
+            // 两颗图标永远贴在胶囊两端。
+            MiniBarSlot(
+                expanded = expanded,
+                song = song,
+                onOpenPlayer = onOpenPlayer,
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+            )
             GlassTab(
                 tab = Tabs[1],
                 selected = selected == 1,

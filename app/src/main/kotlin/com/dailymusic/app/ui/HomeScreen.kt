@@ -88,6 +88,7 @@ fun HomeScreen(
     onOpenPlaylistSquare: () -> Unit,
     onOpenRecognize: () -> Unit,
     onOpenPlaylist: (PlaylistBrief) -> Unit,
+    onOpenMine: () -> Unit,
 ) {
     val colors = MiuixTheme.colorScheme
     var songs by remember { mutableStateOf<List<Song>>(emptyList()) }
@@ -148,31 +149,35 @@ fun HomeScreen(
     ) {
         item {
             Column(Modifier.fillMaxWidth().statusBarsPadding()) {
-                // 标题行：左边问候，右边头像
-                Row(
+                // 标题行：标题和头像**同一行**，两者垂直居中对齐。
+                // 之前头像挂在整个 Column 的底部（title + 问候两行），结果它落在问候语那一行，
+                // 比标题低一截；拆成两行之后头像中心正好压在标题的垂直中线上。
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = 20.dp, end = 20.dp, top = 10.dp),
-                    verticalAlignment = Alignment.Bottom,
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                        .padding(start = 20.dp, end = 20.dp, top = 8.dp),
                 ) {
-                    Column(Modifier.weight(1f)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         Text(
                             text = "Daily Music",
+                            modifier = Modifier.weight(1f),
                             fontSize = 31.sp,
                             fontWeight = FontWeight.ExtraBold,
                             letterSpacing = (-1.1).sp,
                             lineHeight = 35.sp,
                             color = colors.onBackground,
                         )
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            text = greeting(),
-                            fontSize = 12.5.sp,
-                            color = colors.onSurfaceVariantSummary,
-                        )
+                        AvatarBubble(onClick = onOpenMine)
                     }
-                    AvatarBubble()
+                    Spacer(Modifier.height(5.dp))
+                    Text(
+                        text = greeting(),
+                        fontSize = 12.5.sp,
+                        color = colors.onSurfaceVariantSummary,
+                    )
                 }
 
                 // 搜索药丸。视觉稿 .searchbar 用的是 --card（浅色纯白），
@@ -386,23 +391,33 @@ private fun greeting(): String = when (LocalTime.now().hour) {
 
 /** 右上角头像：登录过就显示真实头像，否则用一枚渐变色占位。 */
 @Composable
-private fun AvatarBubble() {
+private fun AvatarBubble(onClick: () -> Unit) {
     val url = Profile.avatar
-    if (url.isNotBlank()) {
-        RemoteImage(
-            url = url,
-            modifier = Modifier.size(40.dp).clip(CircleShape),
-            shape = CircleShape,
-        )
-    } else {
-        Box(
-            Modifier
-                .size(40.dp)
-                .background(
-                    Brush.linearGradient(listOf(Color(0xFFFFC48A), Color(0xFFEF6F8E))),
-                    CircleShape,
-                ),
-        )
+    val size = 44.dp
+    // 整块可点（含未登录时的渐变占位），点进「我的」。
+    // clip 在 clickable 之前，涟漪才不会在圆形头像外露出直角。
+    Box(
+        modifier = Modifier
+            .size(size)
+            .clip(CircleShape)
+            .clickable(onClick = onClick),
+    ) {
+        if (url.isNotBlank()) {
+            RemoteImage(
+                url = url,
+                modifier = Modifier.size(size),
+                shape = CircleShape,
+            )
+        } else {
+            Box(
+                Modifier
+                    .size(size)
+                    .background(
+                        Brush.linearGradient(listOf(Color(0xFFFFC48A), Color(0xFFEF6F8E))),
+                        CircleShape,
+                    ),
+            )
+        }
     }
 }
 

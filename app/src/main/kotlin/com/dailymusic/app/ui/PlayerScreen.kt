@@ -91,7 +91,7 @@ import kotlin.math.roundToInt
 import androidx.compose.foundation.gestures.detectDragGestures
 
 // 歌词页固定深色（视觉稿第 ③ 屏就是这么定的），所以这套颜色不跟随系统。
-private val LyricSung = Color.White
+internal val LyricSung = Color.White
 
 /**
  * 当前行「还没唱到」那半截的颜色。
@@ -100,7 +100,7 @@ private val LyricSung = Color.White
  * 「当前行的待唱部分有多亮」。0.28 太暗 —— 整句会读成「唱过的白 + 没唱的灰」，
  * Apple Music 是整句都看得清、只是唱过的更亮，所以取 0.45。
  */
-private val LyricUnsung = Color.White.copy(alpha = 0.45f)
+internal val LyricUnsung = Color.White.copy(alpha = 0.45f)
 
 /**
  * 播放页，版式对齐 `design/mockup.html` 第 ② 屏。
@@ -605,6 +605,8 @@ fun LyricsScreen(onClose: () -> Unit) {
     var showQueue by remember { mutableStateOf(false) }
     var showSleep by remember { mutableStateOf(false) }
     var showMore by remember { mutableStateOf(false) }
+    // 歌词动效（横屏卡片）：WAVE 动感波光 / KTV 模式。
+    var showEffect by remember { mutableStateOf(false) }
 
     // 背景：模糊封面极慢地「呼吸」。
     // Apple Music 的歌词页不是一张静止底图 —— 播放时封面在十秒尺度上缓慢放大再回缩，
@@ -663,11 +665,14 @@ fun LyricsScreen(onClose: () -> Unit) {
                 modifier = Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 16.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(
-                    Modifier.size(38.dp).clip(CircleShape).clickable(onClick = onClose),
-                    contentAlignment = Alignment.CenterStart,
-                ) {
-                    TintedIcon(AppIcons.ChevronDown, Color.White.copy(alpha = 0.9f), 26.dp)
+                // 左右各留 76dp：右边现在有两颗按钮，左边只留一颗的话标题会被挤偏。
+                Box(Modifier.width(76.dp), contentAlignment = Alignment.CenterStart) {
+                    Box(
+                        Modifier.size(38.dp).clip(CircleShape).clickable(onClick = onClose),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        TintedIcon(AppIcons.ChevronDown, Color.White.copy(alpha = 0.9f), 26.dp)
+                    }
                 }
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
@@ -686,11 +691,27 @@ fun LyricsScreen(onClose: () -> Unit) {
                         maxLines = 1,
                     )
                 }
-                Box(
-                    modifier = Modifier.size(38.dp).clip(CircleShape).clickable { showMore = true },
-                    contentAlignment = Alignment.CenterEnd,
+                Row(
+                    modifier = Modifier.width(76.dp),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    TintedIcon(AppIcons.MoreHoriz, Color.White.copy(alpha = 0.55f), 20.dp)
+                    // 动效入口：星星图标，比「更多」亮一档，让人知道这里能点。
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .clickable { showEffect = true },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        TintedIcon(AppIcons.Sparkle, Color.White.copy(alpha = 0.85f), 19.dp)
+                    }
+                    Box(
+                        modifier = Modifier.size(38.dp).clip(CircleShape).clickable { showMore = true },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        TintedIcon(AppIcons.MoreHoriz, Color.White.copy(alpha = 0.55f), 20.dp)
+                    }
                 }
             }
 
@@ -781,6 +802,16 @@ fun LyricsScreen(onClose: () -> Unit) {
         if (showQueue) QueueSheet { showQueue = false }
         if (showSleep) SleepTimerSheet { showSleep = false }
         if (showMore) MoreSheet(song) { showMore = false }
+
+        // 动效页盖在整页之上（包括底部的进度条与控制键）。
+        if (showEffect) {
+            LyricEffectScreen(
+                song = song,
+                lyrics = lyrics,
+                position = position,
+                onClose = { showEffect = false },
+            )
+        }
     }
 }
 
@@ -1021,7 +1052,7 @@ private fun LyricLineItem(
  * 把「已唱到第几个字」换算成 0..1 的横向进度，做成硬边渐变给文字做卡拉 OK 扫色。
  * 按字宽加权（而不是按词数均分），中英文混排时才不会越扫越偏。
  */
-private fun sweepFraction(line: LyricLine, position: Long): Float {
+internal fun sweepFraction(line: LyricLine, position: Long): Float {
     val total = line.text.length
     if (total <= 0) return 0f
     if (position <= line.startMs) return 0f
@@ -1042,7 +1073,7 @@ private fun sweepFraction(line: LyricLine, position: Long): Float {
     return 1f
 }
 
-private fun sweepBrush(line: LyricLine, position: Long): Brush {
+internal fun sweepBrush(line: LyricLine, position: Long): Brush {
     val p = sweepFraction(line, position).coerceIn(0f, 1f)
     return Brush.horizontalGradient(
         0f to LyricSung,

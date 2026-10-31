@@ -24,9 +24,10 @@ android {
         applicationId = "com.dailymusic.app"
         minSdk = 33
         targetSdk = 35
-        // 1.0.0 = 首个可日常使用的版本；1.0.1 修播放页点击区的直角涟漪与弹层系统栏。
-        versionCode = 4
-        versionName = "1.0.2"
+        // 1.0.0 首个可日常使用；1.0.1 修点击区直角与弹层系统栏；
+        // 1.0.2 播放页手势 / 底栏歌词 / 在线更新；1.0.3 歌词动效 + 首页头像 + 底栏几何。
+        versionCode = 5
+        versionName = "1.0.3"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")

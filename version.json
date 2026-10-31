@@ -1,6 +1,6 @@
 {
-  "version": "1.0.2",
-  "notes": "新增：\n· 播放页手势：下滑退出、左右滑切歌\n· 底栏：选中态改正圆，封面居中放大，歌词分列封面两侧并滚动\n· 应用内在线更新\n\n修复：\n· 底栏选中背景是椭圆\n· 播放页点击区的直角灰底",
-  "apk": "https://github.com/Zxxy326/daily-music/releases/download/v1.0.2/daily-music-1.0.2.apk",
-  "size": 37429698
+  "version": "1.0.3",
+  "notes": "新增：\n· 歌词动效：WAVE 动感波光 / KTV 模式（横屏卡片，左右滑动切换）\n· 首页头像可直接进「我的」\n\n修复：\n· 首页头像与标题不在同一水平线\n· 底栏两颗按钮到胶囊两端的距离不一致（右侧空出一大块）",
+  "apk": "https://github.com/Zxxy326/daily-music/releases/download/v1.0.3/daily-music-1.0.3.apk",
+  "size": 37462466
 }
