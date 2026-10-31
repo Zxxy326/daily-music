@@ -4,7 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import com.dailymusic.app.ui.screen.HomeScreen
+import com.dailymusic.app.ui.RootScreen
 import com.dailymusic.app.ui.theme.DailyMusicTheme
 
 class MainActivity : ComponentActivity() {
@@ -13,7 +13,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             DailyMusicTheme {
-                HomeScreen()
+                RootScreen()
             }
         }
     }

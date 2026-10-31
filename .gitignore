@@ -14,11 +14,24 @@ rust/**/target/
 # Rust 产物（由 scripts/build.sh 生成）
 app/src/main/jniLibs/
 
+# 签名（绝不入库）
+keystore/
+keystore.properties
+*.jks
+*.keystore
+
 # 临时产物（上游参考克隆、调试截图等）
 .tmp/
 
 # 工作区本地记录
 .workbuddy-ai/
+
+# JVM 崩溃日志（构建时内存不足会掉在仓库根目录）
+hs_err_pid*.log
+replay_pid*.log
+
+# 调试截图（design/ 下只留视觉稿与最终效果图）
+design/shots/
 
 # 系统
 .DS_Store
