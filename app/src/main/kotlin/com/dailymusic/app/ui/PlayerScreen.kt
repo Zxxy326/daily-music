@@ -191,6 +191,8 @@ fun PlayerScreen(onClose: () -> Unit, onOpenLyrics: () -> Unit) {
                             .fillMaxWidth(0.835f)
                             .aspectRatio(1f)
                             .shadow(30.dp, RoundedCornerShape(38.dp), clip = false)
+                            // 涟漪必须按封面圆角裁，否则点封面时四个角会露出直角灰块。
+                            .clip(RoundedCornerShape(38.dp))
                             .clickable(onClick = onOpenLyrics),
                         shape = RoundedCornerShape(38.dp),
                     )
@@ -250,7 +252,7 @@ private fun PlayerTopBar(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
-            modifier = Modifier.size(38.dp).clickable(onClick = onClose),
+            modifier = Modifier.size(38.dp).clip(CircleShape).clickable(onClick = onClose),
             contentAlignment = Alignment.CenterStart,
         ) {
             TintedIcon(AppIcons.ChevronDown, fg, 26.dp)
@@ -277,7 +279,7 @@ private fun PlayerTopBar(
             )
         }
         Box(
-            modifier = Modifier.size(38.dp).clickable(onClick = onMore),
+            modifier = Modifier.size(38.dp).clip(CircleShape).clickable(onClick = onMore),
             contentAlignment = Alignment.CenterEnd,
         ) {
             TintedIcon(AppIcons.MoreHoriz, fg3, 20.dp)
@@ -315,7 +317,7 @@ private fun SongInfo(song: Song, fg: Color, fg2: Color) {
         Spacer(Modifier.width(14.dp))
         val favorite = Library.isFavorite(song.key)
         Box(
-            modifier = Modifier.size(40.dp).clickable { Library.toggleFavorite(song) },
+            modifier = Modifier.size(40.dp).clip(CircleShape).clickable { Library.toggleFavorite(song) },
             contentAlignment = Alignment.Center,
         ) {
             TintedIcon(
@@ -429,7 +431,7 @@ private fun ControlBlock(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
-            modifier = Modifier.size(52.dp).clickable { PlayerManager.previous() },
+            modifier = Modifier.size(52.dp).clip(CircleShape).clickable { PlayerManager.previous() },
             contentAlignment = Alignment.Center,
         ) {
             TintedIcon(AppIcons.SkipPrevious, fg, 26.dp)
@@ -452,7 +454,7 @@ private fun ControlBlock(
         }
         Spacer(Modifier.width(34.dp))
         Box(
-            modifier = Modifier.size(52.dp).clickable { PlayerManager.next() },
+            modifier = Modifier.size(52.dp).clip(CircleShape).clickable { PlayerManager.next() },
             contentAlignment = Alignment.Center,
         ) {
             TintedIcon(AppIcons.SkipNext, fg, 26.dp)
@@ -523,7 +525,8 @@ private fun ToolIcon(
     onClick: () -> Unit,
 ) {
     Box(
-        modifier = Modifier.size(40.dp).clickable(onClick = onClick),
+        // 40dp 触摸区裁成圆：不裁的话点一下就是一个方块灰底（视觉上非常脏）。
+        modifier = Modifier.size(40.dp).clip(CircleShape).clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         TintedIcon(icon, tint, size)
@@ -609,7 +612,7 @@ fun LyricsScreen(onClose: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(
-                    Modifier.size(38.dp).clickable(onClick = onClose),
+                    Modifier.size(38.dp).clip(CircleShape).clickable(onClick = onClose),
                     contentAlignment = Alignment.CenterStart,
                 ) {
                     TintedIcon(AppIcons.ChevronDown, Color.White.copy(alpha = 0.9f), 26.dp)
@@ -632,7 +635,7 @@ fun LyricsScreen(onClose: () -> Unit) {
                     )
                 }
                 Box(
-                    modifier = Modifier.size(38.dp).clickable { showMore = true },
+                    modifier = Modifier.size(38.dp).clip(CircleShape).clickable { showMore = true },
                     contentAlignment = Alignment.CenterEnd,
                 ) {
                     TintedIcon(AppIcons.MoreHoriz, Color.White.copy(alpha = 0.55f), 20.dp)

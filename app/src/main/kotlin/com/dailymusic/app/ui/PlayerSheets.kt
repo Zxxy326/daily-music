@@ -48,6 +48,10 @@ import com.dailymusic.app.playback.PlayerManager
 import com.dailymusic.app.playback.SleepTimer
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.core.view.WindowCompat
 
 /**
  * 播放相关的三个底部弹层：队列 / 睡眠定时 / 更多。
@@ -65,9 +69,28 @@ private fun SheetScaffold(
 ) {
     val dark = isSystemInDarkTheme()
 
+    // 弹层铺满全屏之后，状态栏图标仍按「浅色主题 = 深色图标」画，压在深色遮罩上就看不见了。
+    // 打开期间把图标强制成白色，关掉再恢复。
+    val view = LocalView.current
+    DisposableEffect(Unit) {
+        val window = (view.parent as? DialogWindowProvider)?.window
+        val controller = window?.let { WindowCompat.getInsetsController(it, view) }
+        controller?.isAppearanceLightStatusBars = false
+        onDispose {
+            // 用外面捕获的 dark：onDispose 不是 @Composable，不能在里面调 isSystemInDarkTheme()
+            controller?.isAppearanceLightStatusBars = !dark
+        }
+    }
+
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
+        // decorFitsSystemWindows = false：让弹层的窗口铺到状态栏/导航栏下面，
+        // 遮罩才能盖住状态栏（否则顶部会留一条没被压暗的缝，看着像两层窗口）。
+        // 内容自己用 navigationBarsPadding 让开手势条。
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false,
+        ),
     ) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
             // 遮罩。Dialog 自带一层 dim，这里再加一点让底下的播放页退得更干净。

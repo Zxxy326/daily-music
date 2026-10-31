@@ -24,9 +24,9 @@ android {
         applicationId = "com.dailymusic.app"
         minSdk = 33
         targetSdk = 35
-        // 1.0.0 = 首个可日常使用的版本（登录 / 播放 / 歌词 / 收藏同步 / 推荐流齐了）。
-        versionCode = 2
-        versionName = "1.0.0"
+        // 1.0.0 = 首个可日常使用的版本；1.0.1 修播放页点击区的直角涟漪与弹层系统栏。
+        versionCode = 3
+        versionName = "1.0.1"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
