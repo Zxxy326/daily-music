@@ -199,28 +199,39 @@ fun RootScreen() {
     // 榜单详情排在二级页之前，是因为「排行榜 → 某个榜」这条路径上，返回应该先回榜目，
     // 而不是一路跳回首页。
     BackHandler(
-        enabled = lyricsOpen || playerOpen || openRank != null || subPage != null || minePage >= 0,
+        enabled = lyricsOpen || playerOpen || openRank != null || subPage != null ||
+            minePage >= 0 || tab == 1,
     ) {
         when {
             lyricsOpen -> lyricsOpen = false
             playerOpen -> playerOpen = false
             openRank != null -> openRank = null
             subPage != null -> subPage = null
-            else -> minePage = -1
+            minePage >= 0 -> minePage = -1
+            // 在「我的」页按返回：先回首页，而不是直接把 App 退到桌面。
+            // 底栏只有两个 tab，用户很容易把「返回」当成「回上一屏」。
+            else -> tab = 0
         }
     }
 
-    // 底栏 3 秒无操作自动隐藏。
+    // 底栏自动隐藏：**没歌在放**时 5 秒无操作收起；有歌在放就一直挂着
+    // （播放条上有歌名和进度，用户随时会看）。
     //
     // 用「每次交互把 tick +1」而不是重置一个 Boolean：Boolean 从 true 变 true 不会触发
     // LaunchedEffect 重启，计时器会一直按第一次的时间往下数。
     var barVisible by remember { mutableStateOf(true) }
     var barTick by remember { mutableIntStateOf(0) }
     val wakeBar = { barVisible = true; barTick++ }
-    LaunchedEffect(barTick, barVisible) {
+    val playing = PlayerManager.current != null
+    LaunchedEffect(barTick, barVisible, playing) {
         if (!barVisible) return@LaunchedEffect
-        delay(3_000)
+        if (playing) return@LaunchedEffect
+        delay(5_000)
         barVisible = false
+    }
+    // 从「没歌」切到「有歌」时把底栏叫回来：它可能刚被隐藏掉。
+    LaunchedEffect(playing) {
+        if (playing) wakeBar()
     }
 
     val current = PlayerManager.current
@@ -391,6 +402,7 @@ fun RootScreen() {
                             // 底栏现在只有 0=首页 / 1=我的，写 tab=2 会落到 else 分支
                             // 又把「我的」渲染一遍 —— 表现就是点了没反应。
                             onOpenLibrary = { minePage = it },
+                            onOpenSettings = { minePage = 4 },
                             onOpenLogin = { minePage = 2 },
                             onOpenSignIn = { minePage = 3 },
                             onLogout = {
@@ -409,6 +421,11 @@ fun RootScreen() {
                         )
 
                         3 -> SignInScreen(onBack = { minePage = -1 })
+
+                        4 -> SettingsScreen(
+                            contentPadding = contentPadding,
+                            onBack = { minePage = -1 },
+                        )
 
                         else -> LibraryScreen(
                             contentPadding = contentPadding,
@@ -658,17 +675,6 @@ private fun MiniBar(song: Song?, onOpen: () -> Unit) {
         lyrics.lines.getOrNull(anchor)?.text?.takeIf { it.isNotBlank() } ?: song?.name.orEmpty()
     }
 
-    // 空闲时轮播每日一言：每 4 秒换一句，顺序打乱，避免每次启动都是同一句开头。
-    var quoteIndex by remember { mutableIntStateOf(0) }
-    val quotes = remember { DailyQuotes.shuffled() }
-    LaunchedEffect(song) {
-        if (song != null) return@LaunchedEffect
-        while (true) {
-            delay(4_000)
-            quoteIndex = (quoteIndex + 1) % quotes.size
-        }
-    }
-
     val hasSong = song != null
 
     Row(
@@ -681,19 +687,12 @@ private fun MiniBar(song: Song?, onOpen: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (!hasSong) {
-            // 没歌时中间不能空着 —— 一颗慢慢转的黑胶 + 右边滚一句每日一言。
-            // 之前这里只有一行居中文字，两侧留白比内容还宽，看着像加载失败。
-            Vinyl(34.dp)
-            Spacer(Modifier.width(9.dp))
-            Text(
-                text = quotes[quoteIndex],
-                modifier = Modifier
-                    .weight(1f)
-                    .basicMarquee(iterations = Int.MAX_VALUE, initialDelayMillis = 1_500),
-                fontSize = 11.sp,
-                maxLines = 1,
-                color = colors.onSurfaceVariantSummary,
-            )
+            // 没歌时中间只放一颗慢慢转的黑胶，居中。
+            // 之前这里是「黑胶 + 每日一言跑马灯」，字一直在动反而抢戏；
+            // 底栏本来就是个控件条，安静地转一张唱片就够了。
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Vinyl(38.dp)
+            }
             return@Row
         }
 
@@ -758,21 +757,6 @@ private fun LyricSide(
     }
 }
 
-/** 空闲时轮播的「每日一言」。本地常量，不发请求。 */
-private val DailyQuotes = listOf(
-    "耳机一戴，世界与我无关",
-    "有些心情，只有某首歌懂",
-    "单曲循环的，从来不是歌，是心事",
-    "把音量调大，把烦恼调小",
-    "深夜的歌，最适合一个人听",
-    "下一首，也许就是今天的心情",
-    "听歌的人，心里都住着一个故事",
-    "慢慢来，好歌值得等",
-    "旋律响起的瞬间，时间就慢了下来",
-    "今天适合听点慢的",
-    "音乐是唯一不需要翻译的语言",
-    "一首歌的时间，刚好够放空",
-)
 
 @Composable
 private fun GlassNavBar(

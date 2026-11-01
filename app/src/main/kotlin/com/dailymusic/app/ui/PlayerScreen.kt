@@ -89,6 +89,12 @@ import androidx.compose.ui.unit.IntOffset
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 
 // 歌词页固定深色（视觉稿第 ③ 屏就是这么定的），所以这套颜色不跟随系统。
 internal val LyricSung = Color.White
@@ -608,6 +614,17 @@ fun LyricsScreen(onClose: () -> Unit) {
     // 歌词动效（横屏卡片）：WAVE 动感波光 / KTV 模式。
     var showEffect by remember { mutableStateOf(false) }
 
+    // 沉浸：5 秒不动就把顶栏和底部控制收起来，只留歌词。轻点屏幕再叫回来。
+    // 和「动效页」不同，这一页不锁方向，只是把 chrome 淡出。
+    var chromeVisible by remember { mutableStateOf(true) }
+    var chromeTick by remember { mutableIntStateOf(0) }
+    val wake = { chromeVisible = true; chromeTick++ }
+    LaunchedEffect(chromeTick, chromeVisible) {
+        if (!chromeVisible) return@LaunchedEffect
+        delay(5_000)
+        chromeVisible = false
+    }
+
     // 背景：模糊封面极慢地「呼吸」。
     // Apple Music 的歌词页不是一张静止底图 —— 播放时封面在十秒尺度上缓慢放大再回缩，
     // 完全静止的画面会让人误以为页面卡住了。
@@ -630,7 +647,28 @@ fun LyricsScreen(onClose: () -> Unit) {
         label = "veil",
     )
 
-    Box(Modifier.fillMaxSize().background(Color(0xFF08080C))) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color(0xFF08080C))
+            // 轻点唤回顶栏/控制区。只观察按下→抬起的位移、不消费事件，
+            // 所以点歌词跳转、上下拖歌词都照常。
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    var moved = false
+                    var last = down.position
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                        if ((change.position - last).getDistance() > 18f) moved = true
+                        last = change.position
+                        if (!change.pressed) break
+                    }
+                    if (!moved) wake()
+                }
+            },
+    ) {
         RemoteImage(
             url = song.cover(480),
             modifier = Modifier
@@ -661,6 +699,11 @@ fun LyricsScreen(onClose: () -> Unit) {
             // 顶部：收起（向下箭头）/ 歌名+歌手 / 更多。
             // 用 ChevronDown 而不是返回箭头 —— 这一页是从播放页「展开」出来的，
             // 向下收回去才是它的方向感（进入/退出动画也改成了淡入淡出+轻微缩放）。
+            AnimatedVisibility(
+                visible = chromeVisible,
+                enter = fadeIn(tween(220)),
+                exit = fadeOut(tween(200)),
+            ) {
             Row(
                 modifier = Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 16.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -714,6 +757,7 @@ fun LyricsScreen(onClose: () -> Unit) {
                     }
                 }
             }
+            }
 
             // 歌词区：占满剩余高度，两侧 34dp 内边距
             Box(Modifier.fillMaxWidth().weight(1f).padding(horizontal = 34.dp)) {
@@ -729,6 +773,11 @@ fun LyricsScreen(onClose: () -> Unit) {
             }
 
             // 底部：细进度条 + 左右时间 + 控制行
+            AnimatedVisibility(
+                visible = chromeVisible,
+                enter = fadeIn(tween(220)),
+                exit = fadeOut(tween(200)),
+            ) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 30.dp).padding(bottom = 18.dp)) {
                 ThinProgress(position = position, duration = duration) { PlayerManager.seekTo(it) }
                 Spacer(Modifier.height(7.dp))
@@ -796,6 +845,7 @@ fun LyricsScreen(onClose: () -> Unit) {
                         },
                     ) { showSleep = true }
                 }
+            }
             }
         }
 
@@ -1016,8 +1066,8 @@ private fun LyricLineItem(
             style = TextStyle(
                 // 当前行走卡拉 OK 扫色；其余行给纯白，靠外层 alpha 压暗。
                 brush = if (active) sweepBrush(line, position) else SolidColor(Color.White),
-                fontSize = 19.sp,
-                lineHeight = 28.sp,
+                fontSize = 21.sp,
+                lineHeight = 31.sp,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center,
             ),

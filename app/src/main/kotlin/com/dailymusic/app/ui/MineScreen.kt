@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -48,6 +49,7 @@ fun MineScreen(
     contentPadding: PaddingValues,
     onQualityChange: (String) -> Unit,
     onOpenLibrary: (Int) -> Unit,
+    onOpenSettings: () -> Unit,
     onOpenLogin: () -> Unit,
     onOpenSignIn: () -> Unit,
     onLogout: () -> Unit,
@@ -341,6 +343,37 @@ fun MineScreen(
                 InfoRow("界面组件库", "Miuix 0.9.3")
                 InfoRow("播放内核", "Media3 ExoPlayer 1.4.1")
                 KugouServer.lastError?.let { InfoRow("服务错误", it) }
+            }
+        }
+
+        item { Spacer(Modifier.height(12.dp)) }
+
+        // ---- 设置 ----
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .background(colors.surfaceContainer, RoundedCornerShape(20.dp))
+                    .clip(RoundedCornerShape(20.dp))
+                    .clickable(onClick = onOpenSettings)
+                    .padding(horizontal = 16.dp, vertical = 15.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TintedIcon(AppIcons.Tune, colors.primary, 20.dp)
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    text = "设置",
+                    modifier = Modifier.weight(1f),
+                    fontSize = 14.5.sp,
+                    color = colors.onSurface,
+                )
+                Text(
+                    text = "项目信息",
+                    fontSize = 12.5.sp,
+                    color = colors.onSurfaceVariantSummary,
+                )
+                Text("›", fontSize = 17.sp, color = colors.onSurfaceVariantSummary)
             }
         }
 

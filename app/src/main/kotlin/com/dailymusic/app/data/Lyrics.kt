@@ -224,6 +224,12 @@ object LyricParser {
         var from = 0
         while (from < lines.size) {
             val text = lines[from].text
+            // 空行也要一起吃掉：KRC 经常以一条 `[0,0]` 的空行开头，
+            // 不跳过的话第一行就是「不是署名」→ 循环立刻 break，后面整片署名全留下。
+            if (text.isBlank()) {
+                from++
+                continue
+            }
             if (!isCreditLine(text) && !isTitleLine(text, title, artist)) break
             from++
         }
