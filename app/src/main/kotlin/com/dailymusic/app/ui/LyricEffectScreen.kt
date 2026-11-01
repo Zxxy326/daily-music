@@ -44,6 +44,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -79,6 +80,7 @@ import com.dailymusic.app.playback.SpectrumTap
 import kotlinx.coroutines.delay
 import top.yukonga.miuix.kmp.basic.Text
 import kotlin.math.abs
+import kotlin.math.exp
 import androidx.compose.ui.graphics.graphicsLayer
 
 /**
@@ -375,8 +377,13 @@ private fun WavePage(song: Song, lyrics: Lyrics, position: Long) {
     var mid by remember { mutableFloatStateOf(0f) }
     var high by remember { mutableFloatStateOf(0f) }
 
+    // 帧循环只启动一次，position / lyrics 会一直变，用 rememberUpdatedState 取最新值。
+    val latestPosition = rememberUpdatedState(position)
+    val latestLyrics = rememberUpdatedState(lyrics)
+
     LaunchedEffect(Unit) {
         var last = 0L
+        var speedSmooth = 0f
         while (true) {
             withFrameNanos { now ->
                 val dt = if (last == 0L) 0f else (now - last) / 1_000_000_000f
@@ -384,9 +391,30 @@ private fun WavePage(song: Song, lyrics: Lyrics, position: Long) {
                 bass = SpectrumTap.bass
                 mid = SpectrumTap.mid
                 high = SpectrumTap.high
-                // 0.06 圈/秒（约 17 秒一圈）→ 0.52 圈/秒（约 2 秒一圈）
-                val speed = 0.06f + 0.36f * bass + 0.10f * mid
-                phase = (phase + dt * speed) % 1f
+
+                // 速度有三路输入：
+                // 1. 频谱的低频 / 中频 —— 有鼓点时最准；
+                // 2. **逐字起唱脉冲** —— 歌词本身就带着这首歌的节奏，频谱取不到时靠它兜底；
+                // 3. 兜底之下还有 0.05 的底速，保证任何时候都不是一潭死水。
+                val lyr = latestLyrics.value
+                val pos = latestPosition.value
+                val line = lyr.lines.getOrNull(lyr.anchorIndex(pos).coerceAtLeast(0))
+                val pulse = wordPulse(line, pos)
+
+                // 目标速度：低频 + 中频 + 逐字脉冲，再夹一个上限
+                val target = (0.05f + 0.45f * bass + 0.10f * mid + 0.25f * pulse)
+                    .coerceAtMost(0.60f)
+
+                // 速度本身再做一次「快上慢落」的平滑。
+                // 直接拿 bass 当速度会每秒抖十几次，看起来像随机跳帧；
+                // 平滑成「一记鼓点冲上去、半秒内落回来」才有「被音乐推着走」的观感。
+                val k = if (target > speedSmooth) {
+                    1f - exp(-dt / 0.12f)
+                } else {
+                    1f - exp(-dt / 0.45f)
+                }
+                speedSmooth += (target - speedSmooth) * k
+                phase = (phase + dt * speedSmooth) % 1f
             }
         }
     }
@@ -468,6 +496,24 @@ private fun BoxScope.WaveWatermark(
     )
 }
 
+/**
+ * 最近一个字的起唱时刻 → 0..1 的脉冲（约 260ms 衰减）。
+ *
+ * 频谱拿不到数据时（某些机型/某些音源整首歌都是 0），波纹就会一动不动。
+ * 但歌词自带逐字时间轴 —— 每一个字起唱都是一次「击打」，用它推相位，
+ * 观感上仍然是「跟着这首歌在荡」，而不是匀速转圈。
+ */
+private fun wordPulse(line: LyricLine?, position: Long): Float {
+    if (line == null) return 0f
+    var last = -1L
+    for (w in line.words) {
+        if (w.startMs <= position && w.startMs > last) last = w.startMs
+    }
+    if (last < 0) return 0f
+    val dt = (position - last).toFloat()
+    return if (dt > 900f) 0f else kotlin.math.exp(-dt / 260f)
+}
+
 private fun isCjk(c: Char): Boolean =
     c.code in 0x4E00..0x9FFF || c.code in 0x3400..0x4DBF || c.code in 0x3040..0x30FF
 
@@ -504,7 +550,8 @@ private fun BoxScope.WaveLyrics(
 
     val density = LocalDensity.current
     val fontSize = remember(chars, wPx, hPx) {
-        val px = minOf(hPx * 0.165f, maxOf(hPx * 0.052f, wPx * 0.66f / (chars * 1.03f)))
+        // 实机反馈「字太大」：整体缩到原来的 2/3
+        val px = minOf(hPx * 0.165f, maxOf(hPx * 0.052f, wPx * 0.66f / (chars * 1.03f))) * 0.67f
         with(density) { px.toSp() }
     }
 
@@ -612,7 +659,10 @@ private fun sungTokens(line: LyricLine?, position: Long, tokens: List<String>): 
  *
  * @param phase 0..1 的相位；环的半径 = `maxR * ((phase + i/rings) % 1)`
  */
-private const val RING_SLOTS = 5
+private const val RING_SLOTS = 6
+
+/** 基础环数量；多出来的一条是插在中间、按低频淡入的加强环。 */
+private const val RING_BASE = 5
 
 private fun DrawScope.drawWaveField(
     phase: Float,
@@ -637,16 +687,16 @@ private fun DrawScope.drawWaveField(
 
     for (center in sources) {
         for (i in 0 until RING_SLOTS) {
-            // 4 条基础环 + 1 条插在中间的加强环
-            val offset = if (i < 4) i / 4f else 0.125f
-            val gate = if (i < 4) 1f else extra
+            // 5 条基础环 + 1 条插在中间的加强环
+            val offset = if (i < RING_BASE) i / RING_BASE.toFloat() else 0.1f
+            val gate = if (i < RING_BASE) 1f else extra
             if (gate <= 0.01f) continue
             val p = (phase + offset) % 1f
             val r = maxR * p
 
             // 深浅：旅程中段最亮，靠近波源淡入、靠近歌词淡出
             val fin = (p / 0.22f).coerceAtMost(1f)
-            val fout = 1f - ((p - 0.58f) / 0.42f).coerceIn(0f, 1f)
+            val fout = 1f - ((p - 0.62f) / 0.38f).coerceIn(0f, 1f)
             val a = 0.78f * loud * gate * fin * fin * fout * fout
             if (a <= 0.004f) continue
 

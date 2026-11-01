@@ -748,7 +748,7 @@ private fun LyricSide(
                 .fillMaxWidth()
                 // 跑马灯：只在文字溢出时滚动，短句保持静止，不会一直抖。
                 .basicMarquee(iterations = Int.MAX_VALUE, initialDelayMillis = 1_200),
-            fontSize = 12.sp,
+            fontSize = 16.sp,
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
             textAlign = align,
@@ -776,7 +776,8 @@ private fun GlassNavBar(
     val widthFraction by animateFloatAsState(
         // 未播放 0.52：两个 44dp 图标 + 两侧 10dp 内边距 = 108dp，中间再留 100dp 给
         // 「黑胶 + 一句每日一言」，撑得满又不空。展开 0.74：两侧歌词各多出十几 dp。
-        targetValue = if (expanded) 0.74f else 0.56f,
+        // 展开 0.80：歌词字号提到 16sp 之后 0.74 太挤，两侧各只剩五个字宽
+        targetValue = if (expanded) 0.80f else 0.56f,
         // stiffness 放软一点：260 大约 250ms 就到位，肉眼看只是「闪了一下」；
         // 180 + 0.75 阻尼能拖到 450ms 左右，还带一点回弹，才看得出是「撑开」。
         animationSpec = spring(dampingRatio = 0.75f, stiffness = 180f),

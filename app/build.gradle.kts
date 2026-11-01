@@ -30,8 +30,9 @@ android {
         // 1.0.5 WAVE 复刻（双波源）/ 歌词沉浸 + 字号 / 设置页项目信息。
         // 1.0.6 WAVE 重做：封面取色 / 频谱驱动 / 逐字入场 / 首字水印。
         // 1.0.7 实机调校：背景提亮 / 频谱动态范围 / 常亮。
-        versionCode = 9
-        versionName = "1.0.7"
+        // 1.0.8 字号与节奏：歌词缩 1/3 / 波纹 4 条 / 逐字脉冲驱动 / 底栏字放大。
+        versionCode = 10
+        versionName = "1.0.8"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")

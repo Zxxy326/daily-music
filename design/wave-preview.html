@@ -115,13 +115,14 @@
   <div class="covers" id="covers"></div>
   <label>带宽 <input type="range" id="band" min="3" max="16" step="0.5" value="7.5"><b>7.5%</b></label>
   <label>范围 <input type="range" id="range" min="26" max="60" step="1" value="40"><b>40%</b></label>
-  <label>环数 <input type="range" id="rings" min="2" max="6" step="1" value="4"><b>4</b></label>
+  <label>环数 <input type="range" id="rings" min="2" max="7" step="1" value="5"><b>5</b></label>
   <button id="specBtn">频谱驱动：开</button>
   <canvas id="spec" width="260" height="34" title="低频 / 中频 / 高频"></canvas>
   <span class="hint">深浅：每条波带在「旅程中段」最亮，靠近屏幕边缘（波源）和靠近歌词（远端）都暗下去；波带截面也是中间实、两边虚。两个波源与歌词同一水平高度。歌词逐字从两侧往中间靠拢，整句不插空格，超长自动换行。背景、波纹、文字颜色由封面主色推导。<b style="color:#8f94e0">荡的频率由频谱驱动：低频（鼓点）决定出波快慢与亮度，中频决定波带宽度，高频决定环与环的明暗差。</b></span>
 </div>
 
 <script>
+window.onerror = (m,src,l,c)=>{ document.title = 'ERR ' + m + ' @' + l + ':' + c; };
 const LINES = [
   { text: "我真的不能不能放开手" },
   { text: "就让时间停在这一刻" },
@@ -138,7 +139,7 @@ const ctx    = cv.getContext('2d');
 const lyricsEl = document.getElementById('lyrics');
 const songEl = document.getElementById('songName');
 
-const P = { band: 0.075, range: 0.40, rings: 4 };
+const P = { band: 0.075, range: 0.40, rings: 5 };
 
 let W = 0, H = 0, dpr = 1;
 
@@ -266,7 +267,7 @@ let wmText = '', wmPx = 200;
 function layoutText(){
   const ln = LINES[curLine < 0 ? 0 : curLine];
   const n = ln.text.replace(/\s/g,'').length;
-  const fs = Math.max(26, Math.min(H*0.165, (W*0.66)/(n*1.03)));
+  const fs = Math.max(17, Math.min(H*0.165, (W*0.66)/(n*1.03))) * 0.67;
   lyricsEl.style.fontSize = fs.toFixed(1)+'px';
   wmPx = Math.min(H*0.95, (W*0.34)/Math.max(1, wmText.length)*1.05);
 }
@@ -360,7 +361,7 @@ function drawWaves(phase, sp){
 
   for (const s of srcs){
     for (let i=0;i<P.rings+1;i++){
-      const off  = i < P.rings ? i/P.rings : 0.125;
+      const off  = i < P.rings ? i/P.rings : 0.1;
       const gate = i < P.rings ? 1 : extra;
       if (gate <= 0.01) continue;
       const p = (phase + off) % 1;
@@ -368,7 +369,7 @@ function drawWaves(phase, sp){
 
       // 深浅：旅程中段最亮，两头都暗
       const fin  = Math.min(1, p/0.22);
-      const fout = 1 - Math.max(0, Math.min(1, (p-0.58)/0.42));
+      const fout = 1 - Math.max(0, Math.min(1, (p-0.62)/0.38));
       const a = 0.78 * loud * (fin*fin) * (fout*fout);
       if (a <= 0.004) continue;
 
@@ -428,9 +429,16 @@ function frame(now){
 
   // 频谱：低频一响，波就荡得更快更亮
   const sp = spectrumAt(elapsed);
-  const speed = SPEC.on
-    ? 0.06 + 0.36*sp.bass + 0.10*sp.mid
-    : 0.16;
+  // 逐字起唱脉冲：频谱之外的第二路节奏来源（预览里用均分的时间轴模拟）
+  let pulse = 0;
+  if (charEls.length){
+    const lc = (elapsed % LINE_MS) / LINE_MS;
+    const per = 1/charEls.length;
+    const idx = Math.min(charEls.length-1, Math.floor(lc/per));
+    pulse = Math.exp(-((lc - idx*per) * LINE_MS)/260);
+  }
+  const speed = Math.min(0.55,
+    0.05 + (SPEC.on ? 0.32*sp.bass + 0.08*sp.mid : 0) + 0.22*pulse);
   wavePhase = (wavePhase + (dt/1000) * speed) % 1;
 
   const idx = Math.floor(elapsed / LINE_MS) % LINES.length;
