@@ -112,6 +112,16 @@ object Updater {
     /** 最近一次拿到的版本信息。下载失败后点「重试」要用它，失败态里就不必再带一份。 */
     private var lastInfo: UpdateInfo? = null
 
+    /**
+     * 同一个包只允许有一个下载任务在跑。
+     *
+     * 踩过的坑：之前 `State.Downloading` 是在**连接建立之后**才设置的，而
+     * 「并发探路」最长要 7 秒 —— 这 7 秒里按钮还是「立即更新」，用户以为没点上，
+     * 连点几下就是几个下载任务同时跑、抢同一个临时文件。
+     * 现在 CAS 挡并发 + 进来就切态，按钮当场变成进度条。
+     */
+    private val starting = AtomicBoolean(false)
+
     /** 「立即更新」和「重试」共用：拿最近一次检查到的包重新下载。 */
     suspend fun startOrRetry(context: Context) {
         val info = lastInfo ?: return
@@ -154,13 +164,20 @@ object Updater {
 
     /** 下载 + 拉起安装器。进度写回 [state]。 */
     suspend fun downloadAndInstall(context: Context, info: UpdateInfo) {
-        val file = withContext(Dispatchers.IO) { download(context, info) }
-        if (file == null) {
-            state = State.Failed("下载失败，请检查网络后重试")
-            return
+        if (!starting.compareAndSet(false, true)) return
+        // 先切态再做 IO：探路最长 7 秒，这期间 UI 必须已经是「正在下载」。
+        state = State.Downloading(info, 0f)
+        try {
+            val file = withContext(Dispatchers.IO) { download(context, info) }
+            if (file == null) {
+                state = State.Failed("下载失败，请检查网络后重试")
+                return
+            }
+            state = State.Ready(info, file)
+            install(context, file)
+        } finally {
+            starting.set(false)
         }
-        state = State.Ready(info, file)
-        install(context, file)
     }
 
     // ---------------- 检查 ----------------

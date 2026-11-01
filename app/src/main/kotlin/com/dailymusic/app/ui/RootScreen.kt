@@ -2,6 +2,7 @@ package com.dailymusic.app.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -50,10 +51,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -710,9 +714,24 @@ private fun MiniBar(song: Song?, onOpen: () -> Unit) {
         )
         Spacer(Modifier.width(6.dp))
         // 封面居中且放大到 44dp：底栏内高 52dp，再大就贴边了。
+        // 播放时像黑胶一样慢慢转，暂停就停在当前角度 —— 用 Animatable 而不是
+        // rememberInfiniteTransition，后者停不下来，暂停了还在转。
+        val spin = remember { Animatable(0f) }
+        LaunchedEffect(PlayerManager.isPlaying) {
+            if (!PlayerManager.isPlaying) return@LaunchedEffect
+            while (true) {
+                spin.animateTo(
+                    targetValue = spin.value + 360f,
+                    animationSpec = tween(18_000, easing = LinearEasing),
+                )
+                spin.snapTo(spin.value % 360f)
+            }
+        }
         RemoteImage(
             url = song!!.cover(160),
-            modifier = Modifier.size(44.dp),
+            modifier = Modifier
+                .size(44.dp)
+                .graphicsLayer { rotationZ = spin.value },
             shape = CircleShape,
         )
         Spacer(Modifier.width(6.dp))
@@ -742,18 +761,40 @@ private fun LyricSide(
         transitionSpec = { fadeIn(tween(300)) togetherWith fadeOut(tween(180)) },
         label = "mini-lyric",
     ) { line ->
-        Text(
-            text = line,
-            modifier = Modifier
+        // 跑马灯两端做渐隐：字走到边界是「化开」而不是被硬切一刀。
+        // 底栏是玻璃，不能用「盖一层底色」的土办法，只能把内容本身按 alpha 抠掉，
+        // 所以要先开离屏层，再用 DstIn 混合画一条两端透明的白色遮罩。
+        Box(
+            Modifier
                 .fillMaxWidth()
-                // 跑马灯：只在文字溢出时滚动，短句保持静止，不会一直抖。
-                .basicMarquee(iterations = Int.MAX_VALUE, initialDelayMillis = 1_200),
-            fontSize = 16.sp,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-            textAlign = align,
-            color = color,
-        )
+                .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
+                .drawWithContent {
+                    drawContent()
+                    drawRect(
+                        brush = Brush.horizontalGradient(
+                            0f to Color.Transparent,
+                            0.12f to Color.White,
+                            0.88f to Color.White,
+                            1f to Color.Transparent,
+                        ),
+                        blendMode = BlendMode.DstIn,
+                    )
+                },
+        ) {
+            Text(
+                text = line,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    // 跑马灯：只在文字溢出时滚动，短句保持静止，不会一直抖。
+                    .basicMarquee(iterations = Int.MAX_VALUE, initialDelayMillis = 1_200),
+                fontSize = 16.sp,
+                fontFamily = FangYuanFamily,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                textAlign = align,
+                color = color,
+            )
+        }
     }
 }
 

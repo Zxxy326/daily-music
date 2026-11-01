@@ -578,6 +578,7 @@ private fun BoxScope.WaveLyrics(
             BasicText(
                 text = token,
                 style = TextStyle(
+                    fontFamily = WenKaiFamily,
                     fontSize = fontSize,
                     lineHeight = fontSize * 1.28f,
                     fontWeight = FontWeight.Black,
@@ -790,6 +791,7 @@ private fun KtvPage(song: Song, lyrics: Lyrics, position: Long) {
             Box(contentAlignment = Alignment.Center) {
                 Text(
                     text = text,
+                    fontFamily = WenKaiFamily,
                     fontSize = ktvSize(text),
                     fontWeight = FontWeight.ExtraBold,
                     lineHeight = ktvSize(text) * 1.3f,
@@ -800,6 +802,7 @@ private fun KtvPage(song: Song, lyrics: Lyrics, position: Long) {
                 BasicText(
                     text = text,
                     style = TextStyle(
+                        fontFamily = WenKaiFamily,
                         brush = line?.let { sweepBrush(it, position) } ?: SolidColor(Color.White),
                         fontSize = ktvSize(text),
                         lineHeight = ktvSize(text) * 1.3f,

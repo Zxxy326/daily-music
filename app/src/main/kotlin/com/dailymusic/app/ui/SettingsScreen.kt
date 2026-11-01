@@ -169,6 +169,8 @@ fun SettingsScreen(
             Credit("JNA", "直接调用 Rust 导出的 C 符号，绕开 JNI 包名耦合")
             Credit("md3Music", "上游的 Rust 服务与酷狗接口实现，本项目的接口层与它逐行对齐")
             Credit("酷狗概念版", "音源与账号能力（非官方接口，仅供学习研究）")
+            Credit("阿里妈妈方圆体", "底栏歌词字体。阿里巴巴免费商用字体，本项目按 GB2312 子集化后打包")
+            Credit("霞鹜文楷 LXGW WenKai", "歌词动效页字体。SIL Open Font License 1.1，同样做了子集化")
             Spacer(Modifier.height(4.dp))
             Text(
                 text = "还有每一个愿意把歌听完的人。",
