@@ -29,8 +29,9 @@ android {
         // 1.0.4 滑动手势 / 底栏自动隐藏 + 黑胶 / 动效横屏沉浸 / 更新多镜像竞速；
         // 1.0.5 WAVE 复刻（双波源）/ 歌词沉浸 + 字号 / 设置页项目信息。
         // 1.0.6 WAVE 重做：封面取色 / 频谱驱动 / 逐字入场 / 首字水印。
-        versionCode = 8
-        versionName = "1.0.6"
+        // 1.0.7 实机调校：背景提亮 / 频谱动态范围 / 常亮。
+        versionCode = 9
+        versionName = "1.0.7"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")

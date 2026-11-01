@@ -23,6 +23,7 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
@@ -119,9 +120,11 @@ data class CoverPalette(
 
 private fun CoverPalette.Companion.build(dom: Color): CoverPalette = CoverPalette(
     dom = dom,
-    base = lerp(dom, Color.Black, 0.76f),
-    deep = lerp(dom, Color.Black, 0.90f),
-    glow = lerp(dom, Color.Black, 0.54f),
+    // 0.76 那一版在实机上看是「一片死黑」：手机屏本来就比浏览器暗，
+    // 封面主色也往往比预览里的合成色更暗。压到 0.58 / 0.80 才真的看得出颜色。
+    base = lerp(dom, Color.Black, 0.58f),
+    deep = lerp(dom, Color.Black, 0.80f),
+    glow = lerp(dom, Color.Black, 0.34f),
     wave = lerp(dom, Color.White, 0.52f),
     waveIn = lerp(dom, Color.White, 0.92f),
     watermark = lerp(dom, Color.White, 0.55f).copy(alpha = 0.11f),
@@ -166,12 +169,30 @@ private fun extractPalette(image: ImageBitmap): CoverPalette {
     }
 
     if (weightSum <= 0.0) return CoverPalette.Fallback
-    val dom = Color(
+    val raw = Color(
         red = (r / weightSum / 255.0).toFloat(),
         green = (g / weightSum / 255.0).toFloat(),
         blue = (b / weightSum / 255.0).toFloat(),
     )
-    return CoverPalette.build(dom)
+    return CoverPalette.build(lift(raw) ?: return CoverPalette.Fallback)
+}
+
+/**
+ * 把主色提到「能当背景用」的亮度 / 饱和度。
+ *
+ * 暗封面的主色可能只有 10% 明度，直接拿去推导就是一团黑 —— 用户看到的是
+ * 「背景全黑，只有波纹在动」，而不是「这张封面的氛围」。
+ * 这里只调 HSV 的 S/V，不动色相，所以颜色还是封面的那个颜色。
+ */
+private fun lift(color: Color): Color? {
+    val hsv = FloatArray(3)
+    android.graphics.Color.colorToHSV(color.toArgb(), hsv)
+    // 近乎黑白灰的封面没有可用色相：硬把明度提上去，HSV 里的 hue 是 0，
+    // 结果是一块「凭空的暗红」。这种封面直接退回默认靛蓝，比瞎猜好看。
+    if (hsv[1] < 0.18f || hsv[2] < 0.20f) return null
+    hsv[1] = hsv[1].coerceAtLeast(0.45f)
+    hsv[2] = hsv[2].coerceIn(0.50f, 0.92f)
+    return Color(android.graphics.Color.HSVToColor(hsv))
 }
 
 @Composable

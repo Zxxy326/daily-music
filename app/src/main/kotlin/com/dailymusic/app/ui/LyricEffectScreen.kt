@@ -1,6 +1,7 @@
 package com.dailymusic.app.ui
 
 import android.content.pm.ActivityInfo
+import android.view.WindowManager
 import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
@@ -132,6 +133,24 @@ internal fun LyricEffectScreen(
         }
         onDispose {
             controller?.show(WindowInsetsCompat.Type.systemBars())
+        }
+    }
+
+    // 常亮：动效页是「看」的页面，手不会碰屏幕，默认必须压住系统休眠。
+    // 但暂停之后如果还一直常亮，用户把手机放桌上就走，屏幕会亮一整晚 ——
+    // 所以暂停满 1 分钟就把 flag 放掉，让系统照常休眠；一恢复播放立刻再加回来。
+    val playing = PlayerManager.isPlaying
+    DisposableEffect(activity) {
+        val window = activity?.window
+        onDispose { window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
+    }
+    LaunchedEffect(playing, activity) {
+        val window = activity?.window ?: return@LaunchedEffect
+        if (playing) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            delay(60_000)
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
     }
 
@@ -365,7 +384,8 @@ private fun WavePage(song: Song, lyrics: Lyrics, position: Long) {
                 bass = SpectrumTap.bass
                 mid = SpectrumTap.mid
                 high = SpectrumTap.high
-                val speed = 0.130f * (0.55f + 1.90f * bass + 0.45f * mid)
+                // 0.06 圈/秒（约 17 秒一圈）→ 0.52 圈/秒（约 2 秒一圈）
+                val speed = 0.06f + 0.36f * bass + 0.10f * mid
                 phase = (phase + dt * speed) % 1f
             }
         }
@@ -375,12 +395,16 @@ private fun WavePage(song: Song, lyrics: Lyrics, position: Long) {
         val wPx = constraints.maxWidth.toFloat()
         val hPx = constraints.maxHeight.toFloat()
 
+        // 半径按屏幕短边算：默认半径是「最长边」，横向屏上纵向只会走到渐变的头部，
+        // 整屏几乎都是同一个颜色，看着就是一片死黑。
         Box(
             Modifier.fillMaxSize().background(
                 Brush.radialGradient(
                     0f to palette.glow,
-                    0.52f to palette.base,
+                    0.55f to palette.base,
                     1f to palette.deep,
+                    center = Offset(wPx * 0.5f, hPx * 0.5f),
+                    radius = maxOf(wPx, hPx) * 0.62f,
                 ),
             ),
         )
@@ -402,8 +426,8 @@ private fun WavePage(song: Song, lyrics: Lyrics, position: Long) {
                 .fillMaxHeight(0.90f)
                 .background(
                     Brush.radialGradient(
-                        0f to Color.Black.copy(alpha = 0.44f),
-                        0.46f to Color.Black.copy(alpha = 0.28f),
+                        0f to Color.Black.copy(alpha = 0.26f),
+                        0.46f to Color.Black.copy(alpha = 0.14f),
                         0.74f to Color.Transparent,
                         1f to Color.Transparent,
                     ),
@@ -588,6 +612,8 @@ private fun sungTokens(line: LyricLine?, position: Long, tokens: List<String>): 
  *
  * @param phase 0..1 的相位；环的半径 = `maxR * ((phase + i/rings) % 1)`
  */
+private const val RING_SLOTS = 5
+
 private fun DrawScope.drawWaveField(
     phase: Float,
     bass: Float,
@@ -598,26 +624,33 @@ private fun DrawScope.drawWaveField(
     val w = size.width
     val h = size.height
 
-    val band = w * 0.075f * (1f + 0.28f * mid)      // 中频 → 波带宽度
+    val band = w * 0.075f * (1f + 0.60f * mid)      // 中频 → 波带宽度
     val maxR = w * 0.40f                            // 单侧最远只荡到 40% 屏宽
-    val rings = 4 + if (bass > 0.72f) 1 else 0      // 鼓点重时多推一条
-    val loud = 0.60f + 0.48f * bass                 // 低频 → 整体亮度
+    val loud = 0.45f + 0.75f * bass                 // 低频 → 整体亮度
+
+    // 第 5 条「加强环」按低频强度淡入淡出。
+    // 不能改环数 —— 环的相位是 i/rings，改总数会让所有环瞬间挪位、画面像卡了一下。
+    val extra = ((bass - 0.55f) / 0.35f).coerceIn(0f, 1f)
 
     // 两个波源都在屏幕外，且与歌词同高
     val sources = listOf(Offset(-w * 0.02f, h * 0.5f), Offset(w * 1.02f, h * 0.5f))
 
     for (center in sources) {
-        for (i in 0 until rings) {
-            val p = (phase + i / rings.toFloat()) % 1f
+        for (i in 0 until RING_SLOTS) {
+            // 4 条基础环 + 1 条插在中间的加强环
+            val offset = if (i < 4) i / 4f else 0.125f
+            val gate = if (i < 4) 1f else extra
+            if (gate <= 0.01f) continue
+            val p = (phase + offset) % 1f
             val r = maxR * p
 
             // 深浅：旅程中段最亮，靠近波源淡入、靠近歌词淡出
             val fin = (p / 0.22f).coerceAtMost(1f)
             val fout = 1f - ((p - 0.58f) / 0.42f).coerceIn(0f, 1f)
-            val a = 0.78f * loud * fin * fin * fout * fout
+            val a = 0.78f * loud * gate * fin * fin * fout * fout
             if (a <= 0.004f) continue
 
-            val ringVar = (if (i % 2 == 0) 1f else 0.84f) * (0.92f + 0.10f * high)
+            val ringVar = (if (i % 2 == 0) 1f else 0.78f) * (0.80f + 0.40f * high)
 
             val outer = r + band * 0.5f
             if (outer <= 1f) continue

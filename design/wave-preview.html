@@ -211,9 +211,9 @@ let PAL = null;
 
 function buildPalette(coverEl){
   const dom = dominantColor(coverEl);
-  const base   = mix(dom, BLACK, 0.76);   // 底色：主色压暗但保留色相
-  const deep   = mix(dom, BLACK, 0.90);
-  const glow   = mix(dom, BLACK, 0.54);
+  const base   = mix(dom, BLACK, 0.58);   // 底色：主色压暗但保留色相
+  const deep   = mix(dom, BLACK, 0.80);
+  const glow   = mix(dom, BLACK, 0.34);
   const wave   = mix(dom, WHITE, 0.52);   // 光带：主色提亮
   const waveIn = mix(dom, WHITE, 0.92);
   return { dom, base, deep, glow, wave, waveIn };
@@ -346,10 +346,10 @@ function drawSpec(sp){
 function drawWaves(phase, sp){
   ctx.clearRect(0,0,W,H);
 
-  const band  = W * P.band * (1 + 0.28*sp.mid);      // 中频 → 波带宽度
+  const band  = W * P.band * (1 + 0.60*sp.mid);      // 中频 → 波带宽度
   const maxR  = W * P.range;
-  const rings = P.rings + (sp.bass > 0.72 ? 1 : 0);  // 鼓点重时多推一条
-  const loud  = 0.60 + 0.48*sp.bass;                 // 低频 → 整体亮度
+  const extra = Math.max(0, Math.min(1, (sp.bass - 0.55) / 0.35));  // 加强环淡入
+  const loud  = 0.45 + 0.75*sp.bass;                 // 低频 → 整体亮度
   // 两个波源与歌词同一水平高度（屏幕正中）
   const srcs = [
     { x: -W*0.02, y: H*0.50 },
@@ -359,8 +359,11 @@ function drawWaves(phase, sp){
   const cWave = PAL.wave, cIn = PAL.waveIn;
 
   for (const s of srcs){
-    for (let i=0;i<rings;i++){
-      const p = (phase + i/rings) % 1;
+    for (let i=0;i<P.rings+1;i++){
+      const off  = i < P.rings ? i/P.rings : 0.125;
+      const gate = i < P.rings ? 1 : extra;
+      if (gate <= 0.01) continue;
+      const p = (phase + off) % 1;
       const r = maxR * p;
 
       // 深浅：旅程中段最亮，两头都暗
@@ -369,7 +372,7 @@ function drawWaves(phase, sp){
       const a = 0.78 * loud * (fin*fin) * (fout*fout);
       if (a <= 0.004) continue;
 
-      const ringVar = (i % 2 === 0 ? 1.0 : 0.84) * (0.92 + 0.10*sp.high);  // 高频 → 明暗差
+      const ringVar = (i % 2 === 0 ? 1.0 : 0.78) * (0.80 + 0.40*sp.high);  // 高频 → 明暗差
 
       // 波带截面：中间实、两边虚
       const outer = r + band*0.5;
@@ -426,8 +429,8 @@ function frame(now){
   // 频谱：低频一响，波就荡得更快更亮
   const sp = spectrumAt(elapsed);
   const speed = SPEC.on
-    ? 0.130 * (0.55 + 1.90*sp.bass + 0.45*sp.mid)
-    : 0.130;
+    ? 0.06 + 0.36*sp.bass + 0.10*sp.mid
+    : 0.16;
   wavePhase = (wavePhase + (dt/1000) * speed) % 1;
 
   const idx = Math.floor(elapsed / LINE_MS) % LINES.length;

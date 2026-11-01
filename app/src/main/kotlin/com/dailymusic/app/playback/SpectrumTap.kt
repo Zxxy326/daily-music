@@ -52,8 +52,9 @@ object SpectrumTap {
     }
     private val mono = FloatArray(FFT_SIZE)
 
-    /** 每档自己的「最近峰值」，见 [mapBand]。 */
-    private val refDb = floatArrayOf(-40f, -40f, -40f)
+    /** 每档自己的「最近动态范围」（上限 / 下限），见 [mapBand]。 */
+    private val hiDb = floatArrayOf(-28f, -28f, -28f)
+    private val loDb = floatArrayOf(-60f, -60f, -60f)
 
     private var fill = 0
     private var sampleRate = 44_100
@@ -65,7 +66,8 @@ object SpectrumTap {
         bass = 0f
         mid = 0f
         high = 0f
-        refDb.fill(-40f)
+        hiDb.fill(-28f)
+        loDb.fill(-60f)
     }
 
     /**
@@ -81,6 +83,40 @@ object SpectrumTap {
 
         val dup = buffer.duplicate().order(ByteOrder.nativeOrder())
         when (format.encoding) {
+            // 24bit / 32bit 也要认：Hi-Res 曲目在某些机器上会走到这两档，
+            // 漏掉的话表现就是「有声音但频谱全是 0」，波纹自然不动。
+            C.ENCODING_PCM_24BIT -> {
+                val frames = dup.remaining() / (3 * ch)
+                for (f in 0 until frames) {
+                    var acc = 0f
+                    for (c in 0 until ch) {
+                        val i = (f * ch + c) * 3
+                        val v = (dup.get(i).toInt() and 0xFF) or
+                            ((dup.get(i + 1).toInt() and 0xFF) shl 8) or
+                            (dup.get(i + 2).toInt() shl 16)
+                        acc += v / 8_388_608f
+                    }
+                    push(acc / ch)
+                }
+            }
+            C.ENCODING_PCM_32BIT -> {
+                val ints = dup.asIntBuffer()
+                val frames = ints.remaining() / ch
+                for (f in 0 until frames) {
+                    var acc = 0f
+                    val base = f * ch
+                    for (c in 0 until ch) acc += ints.get(base + c) / 2_147_483_648f
+                    push(acc / ch)
+                }
+            }
+            C.ENCODING_PCM_8BIT -> {
+                val frames = dup.remaining() / ch
+                for (f in 0 until frames) {
+                    var acc = 0f
+                    for (c in 0 until ch) acc += ((dup.get(f * ch + c).toInt() and 0xFF) - 128) / 128f
+                    push(acc / ch)
+                }
+            }
             C.ENCODING_PCM_16BIT -> {
                 val shorts = dup.asShortBuffer()
                 val frames = shorts.remaining() / ch
@@ -144,17 +180,21 @@ object SpectrumTap {
     }
 
     /**
-     * dB → 0..1，用**自适应参考峰值**而不是写死的分贝区间。
+     * dB → 0..1，用**每档自己的动态范围**做归一化。
      *
-     * 不同歌的响度差十几 dB（录音电平、母带、有没有做响度战争），
-     * 写死区间要么全程贴 1、要么全程贴 0。这里给每一档维护一个「最近的峰值」：
-     * 峰值快速跟上、每秒回退约 2dB，再把「峰值以下 24dB」映射到 0..1 ——
-     * 于是每首歌都能把这三档用满，安静段落也照样有起伏。
+     * 踩过的两个坑：
+     * 1. 写死分贝区间不行 —— 不同歌的响度差十几 dB，要么全程贴 1 要么全程贴 0；
+     * 2. 只用「最近峰值 + 固定窗口」也不行 —— 流行歌的峰值 bin 波动往往只有 ±3dB，
+     *    映射到 24dB 的窗口里就是 0.87~1.0，看起来像「一直满格、完全不动」。
+     *
+     * 所以这里同时跟踪峰值和谷值（各带很慢的回落 / 上抬），用「这一档自己的
+     * 实际起伏范围」当分母：哪怕整首歌只波动 4dB，这 4dB 也会被拉满 0..1。
      */
     private fun mapBand(index: Int, db: Float): Float {
-        val ref = maxOf(db, refDb[index] - 0.045f)
-        refDb[index] = ref
-        return ((db - (ref - 24f)) / 24f).coerceIn(0f, 1f)
+        hiDb[index] = maxOf(db, hiDb[index] - 0.08f)
+        loDb[index] = minOf(db, loDb[index] + 0.05f)
+        val span = (hiDb[index] - loDb[index]).coerceAtLeast(8f)
+        return ((db - loDb[index]) / span).coerceIn(0f, 1f)
     }
 
     /** 起得快、落得慢，波纹才跟得上鼓点又不会一闪一闪。 */
