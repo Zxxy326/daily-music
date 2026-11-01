@@ -1,5 +1,6 @@
 package com.dailymusic.app.playback
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.media3.common.AudioAttributes
@@ -7,7 +8,11 @@ import androidx.media3.common.C
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.ResolvingDataSource
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.audio.AudioOffloadSupport
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
@@ -53,7 +58,27 @@ class PlaybackService : MediaSessionService() {
             }
         }
 
+        // 音频链路里挂一个直通处理器，顺手把 PCM 抄一份给频谱分析。
+        // 必须自己给 AudioSink，ExoPlayer.Builder 没有暴露「改处理器链」的入口。
+        //
+        // 关掉音频直通（offload）是**必须**的：media3 1.4 的 DefaultAudioSink 在
+        // 没设 provider 时会自己塞一个 DefaultAudioOffloadSupportProvider，
+        // MP3/AAC 走 offload 后压缩数据直接进 AudioTrack，整条 AudioProcessor 链被跳过，
+        // 表现就是「有声音，但 queueInput 一次都不来」。
+        val renderers = object : DefaultRenderersFactory(this) {
+            override fun buildAudioSink(
+                context: Context,
+                enableFloatOutput: Boolean,
+                enableAudioTrackPlaybackParams: Boolean,
+            ): AudioSink = DefaultAudioSink.Builder(context)
+                .setAudioProcessors(arrayOf(SpectrumProcessor()))
+                .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                .setAudioOffloadSupportProvider { _, _ -> AudioOffloadSupport.DEFAULT_UNSUPPORTED }
+                .build()
+        }
+
         val exo = ExoPlayer.Builder(this)
+            .setRenderersFactory(renderers)
             .setMediaSourceFactory(DefaultMediaSourceFactory(resolving))
             .build()
             .apply {

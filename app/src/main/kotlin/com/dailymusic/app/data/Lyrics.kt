@@ -230,11 +230,23 @@ object LyricParser {
                 from++
                 continue
             }
-            if (!isCreditLine(text) && !isTitleLine(text, title, artist)) break
+            if (!isCreditLine(text) && !isTitleLine(text, title, artist) && !isBareTitleLine(text)) break
             from++
         }
         if (from == 0 || lines.size - from < 4) return lines
         return lines.subList(from, lines.size)
+    }
+
+    /**
+     * 没有 `[ti:]` / `[ar:]` 的歌词（酷狗不少 KRC 就是这种）认不出标题行，
+     * 「歌名 - 歌手」留在第一行会让后面的连续裁剪在第一步就断掉，整段名单全留下。
+     * 这里按结构兜底：只有一个「-」分隔、两边都短，就是标题行。
+     */
+    private fun isBareTitleLine(text: String): Boolean {
+        val t = text.trim()
+        if (t.length > 40) return false
+        val parts = t.split(" - ", " -", "- ").map { it.trim() }.filter { it.isNotEmpty() }
+        return parts.size == 2 && parts.all { it.length in 1..24 }
     }
 
     /** 「歌名 - 歌手」「歌名 - 歌手 - 专辑」，以及单独的纯歌名/纯歌手行。 */
@@ -262,7 +274,9 @@ object LyricParser {
     private fun isCreditLine(text: String): Boolean {
         val idx = text.indexOfFirst { it == '：' || it == ':' }
         // 标签过长就不是「角色：人名」这种结构了，多半是正文。
-        if (idx <= 0 || idx > 10) return false
+        // 上限给到 16：中英混写的署名很常见（「制作人Producer」11 个字），
+        // 卡在 10 会让整段名单因为第一行匹配不上而全部留下。
+        if (idx <= 0 || idx > 16) return false
         val label = text.substring(0, idx).trim().lowercase()
         if (label.isEmpty()) return false
         if (label in CREDIT_LABELS) return true

@@ -3,10 +3,8 @@ package com.dailymusic.app.ui
 import android.content.pm.ActivityInfo
 import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -17,9 +15,13 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -37,21 +39,26 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -63,14 +70,15 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.dailymusic.app.data.Library
+import com.dailymusic.app.data.LyricLine
 import com.dailymusic.app.data.Lyrics
 import com.dailymusic.app.data.Song
 import com.dailymusic.app.playback.PlayerManager
+import com.dailymusic.app.playback.SpectrumTap
 import kotlinx.coroutines.delay
 import top.yukonga.miuix.kmp.basic.Text
 import kotlin.math.abs
 import androidx.compose.ui.graphics.graphicsLayer
-import com.dailymusic.app.data.LyricLine
 
 /**
  * 歌词动效（横屏全屏）。
@@ -321,178 +329,328 @@ private fun EffectPage(
 // ---------------------------------------------------------------- WAVE
 
 /**
- * WAVE 动感波光（按 QQ 音乐那个效果的视频逐帧分析复刻）。
+ * WAVE 动感波光。
  *
- * 从视频里量出来的四组参数：
+ * 视觉稿在 `design/wave-preview.html`，那边的数值就是这里的数值 —— 调参数时两边一起改。
  *
- * | 量 | 实测（1280 宽） | 归一化 |
- * |---|---|---|
- * | 波峰间距 | ~124 px | **0.097 × 宽** |
- * | 波峰移动速度 | ~90 px/s | 0.07 × 宽 / 秒 |
- * | 单圈走完 0.58 宽的周期 | — | 8.3 秒（6 圈错相 → 每 1.4 秒出一圈） |
- * | 光带宽度 | ~45 px | ~0.035 × 宽 |
+ * 四件事决定了它长什么样：
  *
- * **两个波源，一左一右、都在屏幕外**：左源发的圈往右荡，右源发的圈往左荡，
- * 在中间交汇 —— 这就是「从左边开始荡、余波荡到右边，同时右边也在往左荡」的观感。
- * 圆心在屏幕正中是不对的，会变成靶心。
- *
- * 配色也是从视频里取的：底 `#151545` 深靛蓝、光带 `#4750CE`、歌词 `#979BFE`。
+ * 1. **配色全部来自封面**（[rememberCoverPalette]）。不是给封面盖一层蓝罩，
+ *    而是取主色再压暗推导出底色 / 辉光 / 光带 / 水印四档，所以换一首歌整个画面跟着换。
+ * 2. **两个波源在屏幕外左右各一个、与歌词同高**。同心圆会变成雷达扫描，
+ *    左右各发各的才会在中间「撞」出层次。波带用径向渐变画（不是描边），
+ *    截面中间实、两边虚。
+ * 3. **深浅是「旅程中段最亮」**：刚离开波源时淡入、快走到歌词时淡出，
+ *    所以中间那条横线附近最亮，两头都暗 —— 也正是「中间留空」的由来。
+ * 4. **荡的频率由频谱驱动**（[SpectrumTap]）：低频一响，相位推进立刻加速、亮度抬高、
+ *    环数多推一条；中频决定波带宽度；高频决定环与环的明暗差。
+ *    安静段落约 7.7 秒荡完一圈，鼓点重的地方能压到 2.5 秒。
  */
 @Composable
 private fun WavePage(song: Song, lyrics: Lyrics, position: Long) {
-    Box(Modifier.fillMaxSize()) {
-        // 底：封面重度模糊 + 深靛蓝罩。视频里几乎看不出封面内容，只有一团蓝紫。
-        RemoteImage(
-            url = song.cover(640),
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer { scaleX = 1.3f; scaleY = 1.3f }
-                .blur(56.dp),
-            shape = RoundedCornerShape(0.dp),
-            showFallbackIcon = false,
-        )
-        Box(Modifier.fillMaxSize().background(Color(0xFF14143F).copy(alpha = 0.66f)))
+    val palette = rememberCoverPalette(song.cover(640))
+
+    // 相位在帧回调里积分，不用 infiniteRepeatable：固定周期做不出「跟着鼓点走」。
+    var phase by remember { mutableFloatStateOf(0f) }
+    var bass by remember { mutableFloatStateOf(0f) }
+    var mid by remember { mutableFloatStateOf(0f) }
+    var high by remember { mutableFloatStateOf(0f) }
+
+    LaunchedEffect(Unit) {
+        var last = 0L
+        while (true) {
+            withFrameNanos { now ->
+                val dt = if (last == 0L) 0f else (now - last) / 1_000_000_000f
+                last = now
+                bass = SpectrumTap.bass
+                mid = SpectrumTap.mid
+                high = SpectrumTap.high
+                val speed = 0.130f * (0.55f + 1.90f * bass + 0.45f * mid)
+                phase = (phase + dt * speed) % 1f
+            }
+        }
+    }
+
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val wPx = constraints.maxWidth.toFloat()
+        val hPx = constraints.maxHeight.toFloat()
+
         Box(
             Modifier.fillMaxSize().background(
                 Brush.radialGradient(
-                    0f to Color(0xFF2C2E8C).copy(alpha = 0.42f),
-                    1f to Color(0xFF07071C).copy(alpha = 0.72f),
+                    0f to palette.glow,
+                    0.52f to palette.base,
+                    1f to palette.deep,
                 ),
             ),
         )
 
-        val transition = rememberInfiniteTransition(label = "wave")
-        val phase by transition.animateFloat(
-            initialValue = 0f,
-            targetValue = 1f,
-            // 9.6 秒走完一圈的全程；5 圈错相 → 每 1.9 秒出一条新波。
-            animationSpec = infiniteRepeatable(tween(9_600, easing = LinearEasing)),
-            label = "wave-phase",
-        )
-
-        Canvas(Modifier.fillMaxSize()) {
-            val w = size.width
-            // 两个源各自以 0.135 宽为间距发圈，左右交错后视觉间距约 0.067 宽 ——
-            // 间距再小就成了密密麻麻的细线，视频里是四条左右的大带子。
-            val spacing = w * 0.135f
-            val maxR = spacing * 5f
-            val band = w * 0.052f
-            // 两个源都在屏幕外一点点，纵向略高于中线（视频里波纹的重心偏上）。
-            val sources = listOf(
-                Offset(-w * 0.04f, size.height * 0.46f),
-                Offset(w * 1.04f, size.height * 0.54f),
-            )
-            sources.forEach { c ->
-                repeat(5) { i ->
-                    val p = (phase + i / 5f) % 1f
-                    val r = maxR * p
-                    // 越往外越淡：视频里靠近边缘的带最亮，荡到对面几乎看不见。
-                    val a = 0.26f * (1f - p) * (1f - p * 0.45f)
-                    if (a <= 0.002f) return@repeat
-                    // 一条带画 5 层，边缘自然过渡（硬描边会像雷达扫描）。
-                    for (k in -2..2) {
-                        val fade = 1f - abs(k) / 3f
-                        drawCircle(
-                            color = Color(0xFF6E77E8).copy(alpha = a * fade),
-                            radius = r + k * band * 0.5f,
-                            center = c,
-                            style = Stroke(width = band * 0.42f),
-                        )
-                    }
-                }
-            }
+        Canvas(
+            Modifier
+                .fillMaxSize()
+                // 竖向压暗要用 DstIn 混合，必须先在离屏层里画。
+                .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen),
+        ) {
+            drawWaveField(phase, bass, mid, high, palette)
         }
+
+        // 中间压暗垫：波纹本来就淡出，再垫一层保证歌词区绝对干净。
+        Box(
+            Modifier
+                .align(Alignment.Center)
+                .fillMaxWidth(0.80f)
+                .fillMaxHeight(0.90f)
+                .background(
+                    Brush.radialGradient(
+                        0f to Color.Black.copy(alpha = 0.44f),
+                        0.46f to Color.Black.copy(alpha = 0.28f),
+                        0.74f to Color.Transparent,
+                        1f to Color.Transparent,
+                    ),
+                ),
+        )
 
         val anchor = lyrics.anchorIndex(position).coerceAtLeast(0)
         val line = lyrics.lines.getOrNull(anchor)
         val text = line?.text?.takeIf { it.isNotBlank() } ?: song.name
-        val shown = spacedWords(line) ?: text
-        // 幽灵字用**上一句**：视频里主歌词换句之后，上一句会以放大、压暗的形态留在背后。
-        val ghost = lyrics.lines.getOrNull(anchor - 1)?.text?.takeIf { it.isNotBlank() }
-            ?: text
 
-        Text(
-            text = ghost,
-            modifier = Modifier
-                .align(Alignment.Center)
-                .fillMaxWidth()
-                .blur(5.dp),
-            fontSize = waveSize(ghost) * 1.9f,
-            fontWeight = FontWeight.Bold,
-            color = Color(0xFF05052A).copy(alpha = 0.62f),
-            textAlign = TextAlign.Center,
-            maxLines = 1,
-            overflow = TextOverflow.Clip,
-        )
+        WaveWatermark(text, wPx, hPx, palette)
+        WaveLyrics(line, position, text, palette, wPx, hPx)
+    }
+}
 
-        Box(
-            Modifier
-                .align(Alignment.Center)
-                .fillMaxWidth()
-                .padding(horizontal = 56.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            // 光晕：主歌词的模糊副本，浅色，让字「浮」在波纹上。
-            Text(
-                text = shown,
-                fontSize = waveSize(shown),
-                fontWeight = FontWeight.Bold,
-                lineHeight = waveSize(shown) * 1.35f,
-                textAlign = TextAlign.Center,
-                color = Color(0xFFB9BDFF).copy(alpha = 0.55f),
-                modifier = Modifier.blur(14.dp),
-            )
+/** 背景水印：这一句的**首字**（英文取首个单词），放大到近屏高、压到几乎看不见。 */
+@Composable
+private fun BoxScope.WaveWatermark(
+    text: String,
+    wPx: Float,
+    hPx: Float,
+    palette: CoverPalette,
+) {
+    val mark = remember(text) { watermarkOf(text) }
+    if (mark.isEmpty()) return
+    val density = LocalDensity.current
+    val sizePx = minOf(hPx * 0.95f, wPx * 0.34f / mark.length * 1.05f)
+    BasicText(
+        text = mark,
+        style = TextStyle(
+            fontSize = with(density) { sizePx.toSp() },
+            fontWeight = FontWeight.Black,
+            color = palette.watermark,
+        ),
+        modifier = Modifier
+            .align(Alignment.Center)
+            .blur(14.dp),
+    )
+}
+
+private fun isCjk(c: Char): Boolean =
+    c.code in 0x4E00..0x9FFF || c.code in 0x3400..0x4DBF || c.code in 0x3040..0x30FF
+
+private fun watermarkOf(text: String): String {
+    val t = text.trim()
+    if (t.isEmpty()) return ""
+    val first = t.first()
+    // 英文取首个单词，中文取首字 —— 一个字母当水印没有辨识度
+    return if (first.code < 0x80) {
+        t.takeWhile { it.code < 0x80 && !it.isWhitespace() }.ifEmpty { first.toString() }
+    } else {
+        first.toString()
+    }
+}
+
+/**
+ * 歌词：**逐字**入场，左半句从左边推、右半句从右边推，越靠外的字出发越晚，最后在正中汇合。
+ *
+ * 整句不插空格（KRC 的 words 本来就切好了，硬加空格会变成「我 真的 不能」那种断句），
+ * 太长就靠 [FlowRow] 自动换行 —— 字号先按字数收缩，缩到下限还放不下才换行。
+ */
+@Composable
+private fun BoxScope.WaveLyrics(
+    line: LyricLine?,
+    position: Long,
+    fallback: String,
+    palette: CoverPalette,
+    wPx: Float,
+    hPx: Float,
+) {
+    val text = line?.text?.takeIf { it.isNotBlank() } ?: fallback
+    val tokens = remember(text) { tokenizeLyric(text) }
+    val chars = remember(text) { text.count { !it.isWhitespace() }.coerceAtLeast(1) }
+
+    val density = LocalDensity.current
+    val fontSize = remember(chars, wPx, hPx) {
+        val px = minOf(hPx * 0.165f, maxOf(hPx * 0.052f, wPx * 0.66f / (chars * 1.03f)))
+        with(density) { px.toSp() }
+    }
+
+    // 一句一个进度条：换句时从头走一遍，逐字靠 delay 错开。
+    val enter = remember { Animatable(1f) }
+    LaunchedEffect(text) {
+        enter.snapTo(0f)
+        enter.animateTo(1f, tween(920, easing = LinearEasing))
+    }
+
+    val sung = remember(line, position, tokens) { sungTokens(line, position, tokens) }
+
+    FlowRow(
+        modifier = Modifier
+            .align(Alignment.Center)
+            .fillMaxWidth(0.68f),
+        horizontalArrangement = Arrangement.Center,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        val mid = (tokens.size - 1) / 2f
+        tokens.forEachIndexed { index, token ->
+            val side = if (index <= mid) -1f else 1f
+            val delay = if (mid < 0.5f) 0f else (abs(index - mid) / mid) * 0.26f
             BasicText(
-                text = shown,
+                text = token,
                 style = TextStyle(
-                    brush = line?.let { waveBrush(it, position) } ?: SolidColor(Color(0xFFC9CCFF)),
-                    fontSize = waveSize(shown),
-                    lineHeight = waveSize(shown) * 1.35f,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center,
+                    fontSize = fontSize,
+                    lineHeight = fontSize * 1.28f,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = 0.5.sp,
+                    color = if (sung[index]) Color.White else Color.White.copy(alpha = 0.46f),
                 ),
+                modifier = Modifier.graphicsLayer {
+                    val p = ((enter.value - delay) / 0.46f).coerceIn(0f, 1f)
+                    val e = 1f - (1f - p) * (1f - p) * (1f - p)
+                    translationX = side * (1f - e) * wPx * 0.10f
+                    alpha = 0.03f + 0.97f * e
+                },
             )
         }
     }
 }
 
 /**
- * 按「词」切开发音：`我真的 不能 不能放开手`。
+ * 逐字切分：汉字/假名一字一块，连续的英文数字合成一块，空格换成不断行空格。
  *
- * QQ 那个效果的歌词是**一个词一个块**、块之间留空的，不是整句连排。
- * KRC 自带逐字时间轴，把词边界上的中文字之间插一个空格就能还原这个排版。
- * 中英混排时不插（`Let you go` 本来就有空格）。
+ * 用「一块一个 Text」而不是整句一个 Text，是为了让每个字能独立位移 ——
+ * 整句只能整体平移，做不出「从两侧往中间靠拢」。
  */
-private fun spacedWords(line: LyricLine?): String? {
-    if (line == null || line.words.size <= 1) return line?.text
-    val sb = StringBuilder()
-    line.words.forEachIndexed { i, w ->
-        if (i > 0) {
-            val prev = line.words[i - 1].text.lastOrNull()
-            val next = w.text.firstOrNull()
-            if (prev != null && next != null && isCjk(prev) && isCjk(next)) sb.append(' ')
+private fun tokenizeLyric(text: String): List<String> {
+    val out = ArrayList<String>(text.length)
+    val buf = StringBuilder()
+    fun flush() {
+        if (buf.isNotEmpty()) {
+            out += buf.toString()
+            buf.clear()
         }
-        sb.append(w.text)
     }
-    return sb.toString()
+    for (ch in text) {
+        when {
+            ch == ' ' -> {
+                flush()
+                out += "\u00A0"
+            }
+            isCjk(ch) -> {
+                flush()
+                out += ch.toString()
+            }
+            else -> buf.append(ch)
+        }
+    }
+    flush()
+    return out
 }
 
-private fun isCjk(c: Char): Boolean =
-    c.code in 0x4E00..0x9FFF || c.code in 0x3400..0x4DBF
-
-/** 已唱部分偏白、未唱部分偏灰紫，和视频里的双色一致。 */
-private fun waveBrush(line: LyricLine, position: Long): Brush {
-    val p = sweepFraction(line, position).coerceIn(0f, 1f)
-    val sung = Color(0xFFE8EAFF)
-    val unsung = Color(0xFF8F94E0).copy(alpha = 0.75f)
-    return Brush.horizontalGradient(0f to sung, p to sung, p to unsung, 1f to unsung)
+/** 哪些块已经唱过了 —— 按词的时间轴，而不是按整句均分。 */
+private fun sungTokens(line: LyricLine?, position: Long, tokens: List<String>): BooleanArray {
+    val flags = BooleanArray(tokens.size)
+    if (line == null || line.words.isEmpty()) {
+        flags.fill(true)
+        return flags
+    }
+    val starts = IntArray(tokens.size)
+    var acc = 0
+    for (i in tokens.indices) {
+        starts[i] = acc
+        acc += tokens[i].length
+    }
+    var offset = 0
+    for (w in line.words) {
+        val from = offset
+        val to = offset + w.text.length
+        offset = to
+        if (position >= w.startMs + w.durationMs * 0.65f) {
+            for (i in tokens.indices) {
+                if (starts[i] in from until to) flags[i] = true
+            }
+        }
+    }
+    return flags
 }
 
-private fun waveSize(text: String) = when {
-    text.length <= 6 -> 46.sp
-    text.length <= 10 -> 38.sp
-    text.length <= 16 -> 32.sp
-    else -> 27.sp
+/**
+ * 画波纹本体。参数与 `design/wave-preview.html` 的 `drawWaves` 一一对应。
+ *
+ * @param phase 0..1 的相位；环的半径 = `maxR * ((phase + i/rings) % 1)`
+ */
+private fun DrawScope.drawWaveField(
+    phase: Float,
+    bass: Float,
+    mid: Float,
+    high: Float,
+    palette: CoverPalette,
+) {
+    val w = size.width
+    val h = size.height
+
+    val band = w * 0.075f * (1f + 0.28f * mid)      // 中频 → 波带宽度
+    val maxR = w * 0.40f                            // 单侧最远只荡到 40% 屏宽
+    val rings = 4 + if (bass > 0.72f) 1 else 0      // 鼓点重时多推一条
+    val loud = 0.60f + 0.48f * bass                 // 低频 → 整体亮度
+
+    // 两个波源都在屏幕外，且与歌词同高
+    val sources = listOf(Offset(-w * 0.02f, h * 0.5f), Offset(w * 1.02f, h * 0.5f))
+
+    for (center in sources) {
+        for (i in 0 until rings) {
+            val p = (phase + i / rings.toFloat()) % 1f
+            val r = maxR * p
+
+            // 深浅：旅程中段最亮，靠近波源淡入、靠近歌词淡出
+            val fin = (p / 0.22f).coerceAtMost(1f)
+            val fout = 1f - ((p - 0.58f) / 0.42f).coerceIn(0f, 1f)
+            val a = 0.78f * loud * fin * fin * fout * fout
+            if (a <= 0.004f) continue
+
+            val ringVar = (if (i % 2 == 0) 1f else 0.84f) * (0.92f + 0.10f * high)
+
+            val outer = r + band * 0.5f
+            if (outer <= 1f) continue
+            val innerEdge = ((r - band * 0.5f) / outer).coerceIn(0.0001f, 0.98f)
+            val peak = (r / outer).coerceIn(innerEdge + 0.002f, 0.985f)
+            val tail = (peak + (1f - peak) * 0.55f).coerceIn(peak + 0.002f, 0.999f)
+
+            val brush = Brush.radialGradient(
+                0f to Color.Transparent,
+                innerEdge to Color.Transparent,
+                (innerEdge + (peak - innerEdge) * 0.55f) to palette.wave.copy(alpha = a * 0.42f * ringVar),
+                peak to palette.waveIn.copy(alpha = a * ringVar),
+                tail to palette.wave.copy(alpha = a * 0.40f * ringVar),
+                1f to Color.Transparent,
+                center = center,
+                radius = outer,
+            )
+            drawCircle(brush = brush, radius = outer, center = center)
+        }
+    }
+
+    // 上下两端淡一档：最亮的带停在中间那条横线上。
+    // DstIn 按 source 的 alpha 保留 destination，所以这里用白色 + 不同 alpha 当遮罩。
+    drawRect(
+        brush = Brush.verticalGradient(
+            0f to Color.White.copy(alpha = 0f),
+            0.26f to Color.White.copy(alpha = 0.45f),
+            0.50f to Color.White,
+            0.74f to Color.White.copy(alpha = 0.45f),
+            1f to Color.White.copy(alpha = 0f),
+        ),
+        blendMode = BlendMode.DstIn,
+    )
 }
 
 // ---------------------------------------------------------------- KTV

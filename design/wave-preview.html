@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WAVE 动感波光 · 效果预览 v2</title>
+<style>
+  :root{ --bg:#07070f; --fg:#eef0ff; --card:#14142a; }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--fg);
+    font-family:-apple-system,"PingFang SC","HarmonyOS Sans SC","Microsoft YaHei",system-ui,sans-serif;
+    display:flex; flex-direction:column; align-items:center; gap:14px;
+    padding:18px 18px 26px;
+  }
+  .stage{
+    position:relative; width:100%; max-width:1080px;
+    aspect-ratio:20/9; border-radius:16px; overflow:hidden;
+    box-shadow:0 24px 60px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.06);
+    isolation:isolate;
+    transition:background-color .5s linear;
+  }
+  canvas#cv{position:absolute;inset:0;width:100%;height:100%;display:block}
+
+  /* 中间压暗垫：保证歌词区永远干净 */
+  .scrim{
+    position:absolute; left:50%; top:50%;
+    width:80%; height:90%; transform:translate(-50%,-50%);
+    background:radial-gradient(ellipse at center,
+      rgba(0,0,0,.44) 0%, rgba(0,0,0,.28) 46%, rgba(0,0,0,0) 74%);
+    pointer-events:none;
+  }
+
+  /* 背景水印：这一句的首字 */
+  .wm{
+    position:absolute; left:50%; top:50%;
+    transform:translate(-50%,-50%);
+    font-weight:900; white-space:nowrap; pointer-events:none;
+    line-height:1; user-select:none;
+    transition:color .4s linear;
+  }
+
+  /* 歌词：逐字、不插空格、可换行 */
+  .lyrics{
+    position:absolute; left:50%; top:50%;
+    transform:translate(-50%,-50%);
+    width:66%;
+    display:flex; flex-wrap:wrap; justify-content:center; align-items:baseline;
+    column-gap:0; row-gap:0;
+    font-weight:900; line-height:1.28; letter-spacing:.01em;
+    text-align:center;
+  }
+  .c{
+    display:inline-block; white-space:pre;
+    will-change:transform,opacity;
+    text-shadow:0 0 20px rgba(255,255,255,.22), 0 3px 26px rgba(0,0,0,.55);
+  }
+  .c.sung{ color:#fff }
+  .c.unsung{ color:rgba(255,255,255,.46) }
+  .c.now{ color:#fff; text-shadow:0 0 30px rgba(255,255,255,.85), 0 3px 22px rgba(0,0,0,.5) }
+
+  .chrome{
+    position:absolute; left:0; right:0; bottom:0;
+    display:flex; align-items:center; gap:12px;
+    padding:0 26px 14px; font-size:11px; color:rgba(255,255,255,.72);
+    opacity:.55;
+  }
+  .chrome .dot{width:5px;height:5px;border-radius:50%;background:#fff;opacity:.35}
+  .chrome .dot.on{width:16px;border-radius:3px;opacity:.9}
+  .chrome .grow{flex:1}
+
+  .panel{
+    width:100%; max-width:1080px; display:flex; flex-wrap:wrap;
+    gap:10px 20px; align-items:center;
+    background:var(--card); border:1px solid rgba(255,255,255,.07);
+    border-radius:14px; padding:12px 16px; font-size:12px; color:#b9bde0;
+  }
+  .panel label{display:flex; align-items:center; gap:8px; white-space:nowrap}
+  .panel input[type=range]{width:100px; accent-color:#8d95ff}
+  .panel b{color:#eef0ff; font-variant-numeric:tabular-nums; min-width:36px; display:inline-block}
+  button{
+    background:#262a52; color:#dfe2ff; border:0; border-radius:9px;
+    padding:7px 14px; font-size:12px; cursor:pointer; font-family:inherit;
+  }
+  button:hover{background:#333a6e}
+  .covers{display:flex; gap:8px; align-items:center}
+  .covers canvas{
+    width:26px; height:26px; border-radius:7px; cursor:pointer;
+    box-shadow:0 0 0 1px rgba(255,255,255,.14); transition:transform .15s;
+  }
+  .covers canvas:hover{transform:translateY(-2px)}
+  .covers canvas.on{box-shadow:0 0 0 2px #fff, 0 4px 12px rgba(0,0,0,.5)}
+  .hint{color:#6f74a8; font-size:11px; width:100%; line-height:1.7}
+  #spec{border-radius:6px; background:#0d0d1e}
+</style>
+</head>
+<body>
+
+<div class="stage" id="stage">
+  <canvas id="cv"></canvas>
+  <div class="scrim"></div>
+  <div class="lyrics" id="lyrics"></div>
+  <div class="chrome">
+    <span class="dot on"></span><span class="dot"></span>
+    <span style="margin-left:8px" id="songName">夜里的风还在吹</span>
+    <span class="grow"></span>
+    <span>00:42 / 03:18</span>
+  </div>
+</div>
+
+<div class="panel">
+  <button id="toggle">暂停</button>
+  <button id="next">下一句</button>
+  <span style="opacity:.7">封面取色</span>
+  <div class="covers" id="covers"></div>
+  <label>带宽 <input type="range" id="band" min="3" max="16" step="0.5" value="7.5"><b>7.5%</b></label>
+  <label>范围 <input type="range" id="range" min="26" max="60" step="1" value="40"><b>40%</b></label>
+  <label>环数 <input type="range" id="rings" min="2" max="6" step="1" value="4"><b>4</b></label>
+  <button id="specBtn">频谱驱动：开</button>
+  <canvas id="spec" width="260" height="34" title="低频 / 中频 / 高频"></canvas>
+  <span class="hint">深浅：每条波带在「旅程中段」最亮，靠近屏幕边缘（波源）和靠近歌词（远端）都暗下去；波带截面也是中间实、两边虚。两个波源与歌词同一水平高度。歌词逐字从两侧往中间靠拢，整句不插空格，超长自动换行。背景、波纹、文字颜色由封面主色推导。<b style="color:#8f94e0">荡的频率由频谱驱动：低频（鼓点）决定出波快慢与亮度，中频决定波带宽度，高频决定环与环的明暗差。</b></span>
+</div>
+
+<script>
+const LINES = [
+  { text: "我真的不能不能放开手" },
+  { text: "就让时间停在这一刻" },
+  { text: "如果我们不曾相遇" },
+  { text: "夜里的风还在吹" },
+  { text: "把想念都藏进这场雨里面" },
+  { text: "如果有一天我们再遇见在街角的咖啡店你还会不会想起我" },
+];
+const LINE_MS = 4200;
+
+const stage  = document.getElementById('stage');
+const cv     = document.getElementById('cv');
+const ctx    = cv.getContext('2d');
+const lyricsEl = document.getElementById('lyrics');
+const songEl = document.getElementById('songName');
+
+const P = { band: 0.075, range: 0.40, rings: 4 };
+
+let W = 0, H = 0, dpr = 1;
+
+/* ================= 封面 & 取色 ================= */
+
+const COVERS = [
+  { name:'落日橙', base:'#E2571F', a:'#FFC178', b:'#7A1B12', shape:'sun'  },
+  { name:'夜海青', base:'#0E4F52', a:'#5FE0CE', b:'#06222B', shape:'wave' },
+  { name:'玫粉',   base:'#C2185B', a:'#FF8FB6', b:'#4A0B24', shape:'blob' },
+  { name:'靛蓝',   base:'#23307A', a:'#8B95FF', b:'#0B1035', shape:'wave' },
+  { name:'墨绿',   base:'#1F3A2E', a:'#8FE3B0', b:'#08130E', shape:'sun'  },
+];
+
+function paintCover(cvEl, c){
+  const g = cvEl.getContext('2d');
+  const S = cvEl.width;
+  g.clearRect(0,0,S,S);
+  const bg = g.createLinearGradient(0,0,S,S);
+  bg.addColorStop(0, c.base); bg.addColorStop(1, c.b);
+  g.fillStyle = bg; g.fillRect(0,0,S,S);
+
+  g.globalAlpha = .9;
+  if (c.shape === 'sun'){
+    const rg = g.createRadialGradient(S*.62,S*.34,0,S*.62,S*.34,S*.62);
+    rg.addColorStop(0, c.a); rg.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = rg; g.fillRect(0,0,S,S);
+  } else if (c.shape === 'wave'){
+    g.strokeStyle = c.a; g.lineWidth = S*.07;
+    for (let i=0;i<3;i++){
+      g.beginPath();
+      for (let x=0;x<=S;x+=4){
+        const y = S*(.45+i*.16) + Math.sin(x/S*Math.PI*2 + i)*S*.08;
+        x===0 ? g.moveTo(x,y) : g.lineTo(x,y);
+      }
+      g.stroke();
+    }
+  } else {
+    g.fillStyle = c.a;
+    for (let i=0;i<4;i++){
+      g.beginPath();
+      g.arc(S*(.3+i*.18), S*(.35+i*.14), S*(.16-i*.02), 0, Math.PI*2);
+      g.fill();
+    }
+  }
+  g.globalAlpha = 1;
+}
+
+// 取主色：按「饱和度 × 明度」加权平均，避免被大片暗部拉灰
+function dominantColor(cvEl){
+  const g = cvEl.getContext('2d');
+  const d = g.getImageData(0,0,cvEl.width,cvEl.height).data;
+  let r=0,gg=0,b=0,wsum=0;
+  for (let i=0;i<d.length;i+=4){
+    const R=d[i],G=d[i+1],B=d[i+2];
+    const mx=Math.max(R,G,B), mn=Math.min(R,G,B);
+    const sat = mx===0?0:(mx-mn)/mx;
+    const val = mx/255;
+    const w = 0.12 + sat*1.5*val;
+    r+=R*w; gg+=G*w; b+=B*w; wsum+=w;
+  }
+  return { r:r/wsum, g:gg/wsum, b:b/wsum };
+}
+
+const clamp = (v,a=0,b=255)=>Math.max(a,Math.min(b,v));
+function mix(c1,c2,t){ return { r:c1.r+(c2.r-c1.r)*t, g:c1.g+(c2.g-c1.g)*t, b:c1.b+(c2.b-c1.b)*t }; }
+const BLACK={r:0,g:0,b:0}, WHITE={r:255,g:255,b:255};
+const rgb=(c,a=1)=>`rgba(${clamp(c.r)|0},${clamp(c.g)|0},${clamp(c.b)|0},${a})`;
+
+let PAL = null;
+
+function buildPalette(coverEl){
+  const dom = dominantColor(coverEl);
+  const base   = mix(dom, BLACK, 0.76);   // 底色：主色压暗但保留色相
+  const deep   = mix(dom, BLACK, 0.90);
+  const glow   = mix(dom, BLACK, 0.54);
+  const wave   = mix(dom, WHITE, 0.52);   // 光带：主色提亮
+  const waveIn = mix(dom, WHITE, 0.92);
+  return { dom, base, deep, glow, wave, waveIn };
+}
+
+function applyPalette(p){
+  PAL = p;
+  stage.style.background =
+    `radial-gradient(ellipse 70% 90% at 50% 50%, ${rgb(p.glow)} 0%, ${rgb(p.base)} 52%, ${rgb(p.deep)} 100%)`;
+}
+
+/* ================= 尺寸 ================= */
+
+function resize(){
+  const r = stage.getBoundingClientRect();
+  dpr = Math.min(2, window.devicePixelRatio || 1);
+  W = r.width; H = r.height;
+  cv.width = Math.round(W*dpr); cv.height = Math.round(H*dpr);
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  layoutText();
+}
+window.addEventListener('resize', resize);
+
+/* ================= 歌词 ================= */
+
+let curLine = -1, charEls = [];
+
+// 逐字切分：汉字/假名一字一块，连续英文数字合成一块，空格单独一块
+function tokenize(text){
+  const out = [];
+  let buf = '';
+  for (const ch of text){
+    const cjk = /[\u4e00-\u9fff\u3400-\u4dbf\u3040-\u30ff]/.test(ch);
+    if (cjk){
+      if (buf){ out.push(buf); buf=''; }
+      out.push(ch);
+    } else if (ch === ' '){
+      if (buf){ out.push(buf); buf=''; }
+      out.push(' ');
+    } else {
+      buf += ch;
+    }
+  }
+  if (buf) out.push(buf);
+  return out;
+}
+
+let wmText = '', wmPx = 200;
+
+function layoutText(){
+  const ln = LINES[curLine < 0 ? 0 : curLine];
+  const n = ln.text.replace(/\s/g,'').length;
+  const fs = Math.max(26, Math.min(H*0.165, (W*0.66)/(n*1.03)));
+  lyricsEl.style.fontSize = fs.toFixed(1)+'px';
+  wmPx = Math.min(H*0.95, (W*0.34)/Math.max(1, wmText.length)*1.05);
+}
+
+// 背景水印：这一句的首字，用画布画，alpha 合成可控
+function drawWatermark(){
+  if (!wmText || !PAL) return;
+  ctx.save();
+  ctx.filter = 'blur(14px)';
+  ctx.font = `900 ${wmPx.toFixed(1)}px "PingFang SC","HarmonyOS Sans SC","Microsoft YaHei",sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = rgb(mix(PAL.dom, WHITE, 0.55), 0.11);
+  ctx.fillText(wmText, W/2, H/2);
+  ctx.restore();
+}
+
+function buildLine(idx){
+  const ln = LINES[idx];
+  lyricsEl.innerHTML = '';
+  charEls = [];
+  wmText = ln.text.slice(0,1);
+  songEl.textContent = ln.text;
+
+  tokenize(ln.text).forEach(t=>{
+    const el = document.createElement('span');
+    el.className = 'c unsung';
+    el.textContent = t;
+    lyricsEl.appendChild(el);
+    charEls.push(el);
+  });
+  curLine = idx;
+  layoutText();
+}
+
+/* ================= 频谱 ================= */
+
+const c01 = v => Math.max(0, Math.min(1, v));
+
+/**
+ * 模拟实时频谱（预览里没有音频文件，用节拍包络合成一条「像音乐」的谱）。
+ * 接进 App 后这里换成 AudioProcessor 算出来的 FFT 分频能量，映射关系不变。
+ */
+function spectrumAt(ms){
+  const beat = 60/92*1000;                 // 92 BPM
+  const ph   = (ms % beat)/beat;
+  const kick = Math.exp(-ph*8);            // 每拍一记底鼓
+  const bass = 0.16 + 0.84*kick;
+  const mid  = 0.34 + 0.20*Math.sin(ms/1000*1.7) + 0.16*Math.sin(ms/1000*0.63 + 1.1);
+  const half = beat/2;
+  const high = 0.18 + 0.62*Math.exp(-((ms % half)/half)*13);
+  return { bass:c01(bass), mid:c01(mid), high:c01(high) };
+}
+
+const specCv = document.getElementById('spec');
+const specCtx = specCv.getContext('2d');
+
+function drawSpec(sp){
+  const w = specCv.width, h = specCv.height, N = 34;
+  specCtx.clearRect(0,0,w,h);
+  for (let i=0;i<N;i++){
+    const t = i/(N-1);
+    // 低频在左、高频在右，中间用 mid 拉一条过渡
+    const e = t < 0.34 ? sp.bass*(1-0.35*t)
+            : t < 0.68 ? sp.mid*(0.55+0.5*Math.sin(i*1.7))
+            : sp.high*(1-0.25*(t-0.68));
+    const jitter = 0.82 + 0.18*Math.sin(i*2.3 + performance.now()/90);
+    const bh = Math.max(2, h*e*jitter*0.92);
+    specCtx.fillStyle = PAL ? rgb(PAL.wave, 0.35 + 0.5*e) : '#6e77e8';
+    const bw = w/N - 2;
+    specCtx.fillRect(i*(w/N)+1, h-bh, bw, bh);
+  }
+}
+
+/* ================= 波纹 ================= */
+
+function drawWaves(phase, sp){
+  ctx.clearRect(0,0,W,H);
+
+  const band  = W * P.band * (1 + 0.28*sp.mid);      // 中频 → 波带宽度
+  const maxR  = W * P.range;
+  const rings = P.rings + (sp.bass > 0.72 ? 1 : 0);  // 鼓点重时多推一条
+  const loud  = 0.60 + 0.48*sp.bass;                 // 低频 → 整体亮度
+  // 两个波源与歌词同一水平高度（屏幕正中）
+  const srcs = [
+    { x: -W*0.02, y: H*0.50 },
+    { x:  W*1.02, y: H*0.50 },
+  ];
+
+  const cWave = PAL.wave, cIn = PAL.waveIn;
+
+  for (const s of srcs){
+    for (let i=0;i<rings;i++){
+      const p = (phase + i/rings) % 1;
+      const r = maxR * p;
+
+      // 深浅：旅程中段最亮，两头都暗
+      const fin  = Math.min(1, p/0.22);
+      const fout = 1 - Math.max(0, Math.min(1, (p-0.58)/0.42));
+      const a = 0.78 * loud * (fin*fin) * (fout*fout);
+      if (a <= 0.004) continue;
+
+      const ringVar = (i % 2 === 0 ? 1.0 : 0.84) * (0.92 + 0.10*sp.high);  // 高频 → 明暗差
+
+      // 波带截面：中间实、两边虚
+      const outer = r + band*0.5;
+      if (outer <= 1) continue;
+      const innerEdge = Math.max(0, (r - band*0.5)/outer);
+      const peak      = Math.max(innerEdge+0.001, r/outer);
+      const g = ctx.createRadialGradient(s.x,s.y,0,s.x,s.y,outer);
+      g.addColorStop(0, rgb(cWave,0));
+      g.addColorStop(innerEdge, rgb(cWave,0));
+      g.addColorStop(innerEdge + (peak-innerEdge)*0.55, rgb(cWave, a*0.42*ringVar));
+      g.addColorStop(peak, rgb(cIn, a*ringVar));
+      g.addColorStop(peak + (0.999-peak)*0.55, rgb(cWave, a*0.40*ringVar));
+      g.addColorStop(0.999, rgb(cWave,0));
+      g.addColorStop(1, rgb(cWave,0));
+
+      ctx.beginPath();
+      ctx.arc(s.x,s.y,outer,0,Math.PI*2);
+      ctx.fillStyle = g;
+      ctx.fill();
+    }
+  }
+
+  // 上下两端再压一档：最亮的带停在中间那条横线上
+  const vg = ctx.createLinearGradient(0,0,0,H);
+  vg.addColorStop(0,   'rgba(0,0,0,1)');
+  vg.addColorStop(0.26,'rgba(0,0,0,0.55)');
+  vg.addColorStop(0.50,'rgba(0,0,0,0)');
+  vg.addColorStop(0.74,'rgba(0,0,0,0.55)');
+  vg.addColorStop(1,   'rgba(0,0,0,1)');
+  ctx.globalCompositeOperation = 'destination-out';
+  ctx.fillStyle = vg;
+  ctx.fillRect(0,0,W,H);
+  ctx.globalCompositeOperation = 'source-over';
+
+  drawWatermark();
+}
+
+/* ================= 主循环 ================= */
+
+let playing = true;
+let t0 = performance.now();
+let elapsed = parseFloat(new URLSearchParams(location.search).get('t') || '0');
+const QS = new URLSearchParams(location.search);
+if (QS.get('pause') === '1') playing = false;
+if (QS.get('line')) elapsed = parseFloat(QS.get('line')) * LINE_MS + 3200;
+let lastLine = -1;
+let wavePhase = 0;
+const SPEC = { on: true };
+
+function frame(now){
+  const dt = now - t0; t0 = now;
+  if (playing) elapsed += dt;
+
+  // 频谱：低频一响，波就荡得更快更亮
+  const sp = spectrumAt(elapsed);
+  const speed = SPEC.on
+    ? 0.130 * (0.55 + 1.90*sp.bass + 0.45*sp.mid)
+    : 0.130;
+  wavePhase = (wavePhase + (dt/1000) * speed) % 1;
+
+  const idx = Math.floor(elapsed / LINE_MS) % LINES.length;
+  if (idx !== lastLine){ buildLine(idx); lastLine = idx; }
+
+  const local = (elapsed % LINE_MS) / LINE_MS;
+  const n = charEls.length;
+  const mid = (n-1)/2;
+
+  // 逐字：左半从左边推、右半从右边推，越靠外出发越晚，最后在正中汇合
+  const ENTER = 0.46;
+  charEls.forEach((el,i)=>{
+    const side = i <= mid ? -1 : 1;
+    const delay = (Math.abs(i-mid)/Math.max(0.5,mid)) * 0.26;
+    const p = Math.min(1, Math.max(0,(local-delay)/ENTER));
+    const e = 1 - Math.pow(1-p,3);
+    el.style.transform = `translateX(${(side*(1-e)*W*0.10).toFixed(2)}px)`;
+    el.style.opacity = (0.03 + 0.97*e).toFixed(3);
+
+    const sung = local >= (i+1)/n - 0.02;
+    const nowOn = local >= i/n && local < (i+1)/n;
+    el.className = 'c ' + (sung?'sung':'unsung') + (nowOn?' now':'');
+  });
+
+  drawWaves(wavePhase, sp);
+  drawSpec(sp);
+  requestAnimationFrame(frame);
+}
+
+/* ================= 控件 ================= */
+
+document.getElementById('toggle').onclick = (e)=>{
+  playing = !playing;
+  e.target.textContent = playing ? '暂停' : '播放';
+};
+document.getElementById('specBtn').onclick = (e)=>{
+  SPEC.on = !SPEC.on;
+  e.target.textContent = '频谱驱动：' + (SPEC.on ? '开' : '关');
+};
+document.getElementById('next').onclick = ()=>{
+  elapsed = (Math.floor(elapsed/LINE_MS)+1)*LINE_MS;
+};
+
+function bind(id, key, div, fmt){
+  const el = document.getElementById(id);
+  const out = el.parentElement.querySelector('b');
+  el.oninput = ()=>{ P[key] = parseFloat(el.value)/div; out.textContent = fmt(el.value); };
+}
+bind('band','band',100,v=>v+'%');
+bind('range','range',100,v=>v+'%');
+bind('rings','rings',1,v=>v);
+
+const coversBox = document.getElementById('covers');
+COVERS.forEach((c,i)=>{
+  const el = document.createElement('canvas');
+  el.width = el.height = 96;
+  paintCover(el, c);
+  el.title = c.name;
+  if (i===0) el.classList.add('on');
+  el.onclick = ()=>{
+    [...coversBox.children].forEach(x=>x.classList.remove('on'));
+    el.classList.add('on');
+    applyPalette(buildPalette(el));
+  };
+  coversBox.appendChild(el);
+});
+
+resize();
+const ci = parseInt(QS.get('cover') || '0', 10) || 0;
+[...coversBox.children].forEach((x,i)=>x.classList.toggle('on', i===ci));
+applyPalette(buildPalette(coversBox.children[ci]));
+buildLine(0);
+requestAnimationFrame(frame);
+new ResizeObserver(()=>resize()).observe(stage);
+</script>
+</body>
+</html>
