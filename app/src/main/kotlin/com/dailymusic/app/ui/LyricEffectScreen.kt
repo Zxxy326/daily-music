@@ -56,7 +56,6 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -578,7 +577,7 @@ private fun BoxScope.WaveLyrics(
             BasicText(
                 text = token,
                 style = TextStyle(
-                    fontFamily = WenKaiFamily,
+                    fontFamily = FangYuanFamily,
                     fontSize = fontSize,
                     lineHeight = fontSize * 1.28f,
                     fontWeight = FontWeight.Black,
@@ -740,13 +739,20 @@ private fun DrawScope.drawWaveField(
 // ---------------------------------------------------------------- KTV
 
 /**
- * KTV：封面当画面（轻模糊 + 压暗），歌名做大字水印，歌词贴底逐字扫色。
+ * KTV：封面当画面（轻模糊 + 压暗），歌名做大字水印。
+ *
+ * 歌词是**两句**：上一句靠左靠上、压暗，当前句靠右靠下、逐字点亮。
+ * 这样视线自然落在右下角正在唱的那一句上，左上那句只是「刚才唱到哪」的参照。
  *
  * 不把封面彻底模糊掉 —— KTV 的味道就在「看得见画面」，靠一层黑罩保证白字读得出来。
  */
 @Composable
 private fun KtvPage(song: Song, lyrics: Lyrics, position: Long) {
-    Box(Modifier.fillMaxSize()) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val wPx = constraints.maxWidth.toFloat()
+        val hPx = constraints.maxHeight.toFloat()
+        val density = LocalDensity.current
+
         RemoteImage(
             url = song.cover(640),
             modifier = Modifier.fillMaxSize().blur(3.dp),
@@ -762,75 +768,111 @@ private fun KtvPage(song: Song, lyrics: Lyrics, position: Long) {
                 ),
             ),
         )
+
+        // 歌名水印：压在正中偏上一点，别和右下角的当前句打架。
         Text(
             text = song.name,
             modifier = Modifier
                 .align(Alignment.Center)
                 .fillMaxWidth()
                 .padding(horizontal = 30.dp),
+            fontFamily = FangYuanFamily,
             fontSize = 58.sp,
             fontWeight = FontWeight.ExtraBold,
             letterSpacing = 5.sp,
-            color = Color.White.copy(alpha = 0.18f),
+            color = Color.White.copy(alpha = 0.16f),
             textAlign = TextAlign.Center,
             maxLines = 1,
             overflow = TextOverflow.Clip,
         )
 
-        val line = currentLine(lyrics, position)
-        val text = line?.text?.takeIf { it.isNotBlank() } ?: song.name
+        val anchor = lyrics.anchorIndex(position).coerceAtLeast(0)
+        val line = lyrics.lines.getOrNull(anchor)
+        val previous = lyrics.lines.getOrNull(anchor - 1)?.text?.takeIf { it.isNotBlank() }
 
-        Column(
-            Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .padding(horizontal = 40.dp)
-                .padding(bottom = 118.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Text(
-                    text = text,
-                    fontFamily = WenKaiFamily,
-                    fontSize = ktvSize(text),
-                    fontWeight = FontWeight.ExtraBold,
-                    lineHeight = ktvSize(text) * 1.3f,
-                    textAlign = TextAlign.Center,
-                    color = Color.White.copy(alpha = 0.32f),
-                    modifier = Modifier.blur(10.dp),
-                )
-                BasicText(
-                    text = text,
-                    style = TextStyle(
-                        fontFamily = WenKaiFamily,
-                        brush = line?.let { sweepBrush(it, position) } ?: SolidColor(Color.White),
-                        fontSize = ktvSize(text),
-                        lineHeight = ktvSize(text) * 1.3f,
-                        fontWeight = FontWeight.ExtraBold,
-                        textAlign = TextAlign.Center,
+        // 上一句：靠左、靠上，压暗一档。
+        if (previous != null) {
+            BasicText(
+                text = previous,
+                style = TextStyle(
+                    fontFamily = FangYuanFamily,
+                    fontSize = with(density) { (hPx * 0.050f).toSp() },
+                    lineHeight = with(density) { (hPx * 0.050f * 1.35f).toSp() },
+                    fontWeight = FontWeight.Medium,
+                    color = Color.White.copy(alpha = 0.30f),
+                ),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .fillMaxWidth(0.66f)
+                    .padding(
+                        start = with(density) { (wPx * 0.058f).toDp() },
+                        top = with(density) { (hPx * 0.245f).toDp() },
                     ),
-                )
-            }
-            line?.translation?.takeIf { it.isNotBlank() }?.let { tr ->
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    text = tr,
-                    fontSize = 13.sp,
-                    color = Color.White.copy(alpha = 0.66f),
-                    textAlign = TextAlign.Center,
-                    maxLines = 2,
-                )
-            }
+            )
         }
+
+        KtvCurrentLine(line, position, song.name, wPx, hPx)
     }
 }
 
-private fun ktvSize(text: String) = when {
-    text.length <= 10 -> 34.sp
-    text.length <= 18 -> 28.sp
-    else -> 22.sp
-}
+/** 当前句：靠右、靠下，一个字一个字点亮。 */
+@Composable
+private fun BoxScope.KtvCurrentLine(
+    line: LyricLine?,
+    position: Long,
+    fallback: String,
+    wPx: Float,
+    hPx: Float,
+) {
+    val text = line?.text?.takeIf { it.isNotBlank() } ?: fallback
+    val tokens = remember(text) { tokenizeLyric(text) }
+    val sung = remember(line, position, tokens) { sungTokens(line, position, tokens) }
+    val density = LocalDensity.current
 
-/** 当前该高亮的那一行；间奏时 `anchorIndex` 会停在上一句，正好符合「上一句一直亮」。 */
-private fun currentLine(lyrics: Lyrics, position: Long) =
-    lyrics.lines.getOrNull(lyrics.anchorIndex(position).coerceAtLeast(0))
+    val fontSize = remember(text, wPx, hPx) {
+        val chars = text.count { !it.isWhitespace() }.coerceAtLeast(1)
+        val px = minOf(hPx * 0.088f, wPx * 0.74f / (chars * 1.05f))
+        with(density) { px.toSp() }
+    }
+
+    Column(
+        modifier = Modifier
+            .align(Alignment.BottomEnd)
+            .fillMaxWidth(0.76f)
+            .padding(
+                end = with(density) { (wPx * 0.055f).toDp() },
+                bottom = with(density) { (hPx * 0.185f).toDp() },
+            ),
+        horizontalAlignment = Alignment.End,
+    ) {
+        FlowRow(
+            horizontalArrangement = Arrangement.End,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            tokens.forEachIndexed { i, token ->
+                BasicText(
+                    text = token,
+                    style = TextStyle(
+                        fontFamily = FangYuanFamily,
+                        fontSize = fontSize,
+                        lineHeight = fontSize * 1.3f,
+                        fontWeight = FontWeight.Bold,
+                        color = if (sung[i]) Color.White else Color.White.copy(alpha = 0.34f),
+                    ),
+                )
+            }
+        }
+        line?.translation?.takeIf { it.isNotBlank() }?.let { tr ->
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = tr,
+                fontSize = 13.sp,
+                color = Color.White.copy(alpha = 0.62f),
+                textAlign = TextAlign.End,
+                maxLines = 2,
+            )
+        }
+    }
+}

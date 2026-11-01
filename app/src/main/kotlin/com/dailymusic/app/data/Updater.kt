@@ -37,6 +37,8 @@ object Updater {
 
     private const val REPO = "Zxxy326/daily-music"
     private const val TAG = "Updater"
+    private const val PREF = "updater"
+    private const val KEY_SKIPPED = "skipped_version"
 
     /**
      * 首选源：仓库根目录的 `version.json`（raw 域名，镜像最多、不吃 API 配额）。
@@ -128,27 +130,39 @@ object Updater {
         downloadAndInstall(context, info)
     }
 
-    /** 用户点了「稍后」，本次进程内不再打扰。 */
-    private var dismissedVersion: String? = null
-
-    fun dismiss() {
+    /**
+     * 用户点了「忽略本次」。
+     *
+     * 要**存盘**而不是只记在内存里：静默检查每次冷启动都会跑，只记内存的话
+     * 用户今天点了忽略，明天开 App 又弹一遍，等于没得选。
+     * 记的是具体版本号，所以下次真出了新版本还会照常提示。
+     */
+    fun dismiss(context: Context) {
         val info = when (val s = state) {
             is State.Available -> s.info
             is State.Downloading -> s.info
             is State.Ready -> s.info
             else -> null
         }
-        dismissedVersion = info?.version
+        if (info != null) {
+            context.getSharedPreferences(PREF, Context.MODE_PRIVATE)
+                .edit()
+                .putString(KEY_SKIPPED, info.version)
+                .apply()
+        }
         state = State.Idle
     }
+
+    private fun skippedVersion(context: Context): String? =
+        context.getSharedPreferences(PREF, Context.MODE_PRIVATE).getString(KEY_SKIPPED, null)
 
     /**
      * 静默检查。启动后调用一次即可，失败完全静默（不打扰用户）。
      *
      * @return 是否有新版本（供调用方决定要不要弹提示）。
      */
-    suspend fun checkSilently(context: Context): Boolean {
-        Log.w(TAG, "checkSilently start")
+    suspend fun checkSilently(context: Context, manual: Boolean = false): Boolean {
+        Log.w(TAG, "checkSilently start manual=$manual")
         if (state is State.Downloading) return false
         val current = currentVersionName(context)
         // 总超时兜底：某个镜像「握手很快、body 一点点往外吐」时，单次 readTimeout 会被
@@ -156,7 +170,9 @@ object Updater {
         val info = withTimeoutOrNull(12_000) { fetchLatest() } ?: return false
         Log.w(TAG, "current=$current remote=${info.version}")
         if (compareVersion(info.version, current) <= 0) return false
-        if (info.version == dismissedVersion) return false
+        // 静默检查要尊重「忽略本次」；用户主动点「检查更新」时不受限制，
+        // 否则忽略过一次之后就再也没法从设置里更新了。
+        if (!manual && info.version == skippedVersion(context)) return false
         lastInfo = info
         state = State.Available(info)
         return true

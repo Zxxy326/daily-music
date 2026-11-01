@@ -545,7 +545,7 @@ fun RootScreen() {
         UpdateDialog(
             state = Updater.state,
             onStart = { updateScope.launch { Updater.startOrRetry(context) } },
-            onDismiss = { Updater.dismiss() },
+            onDismiss = { Updater.dismiss(context) },
         )
     }
 }

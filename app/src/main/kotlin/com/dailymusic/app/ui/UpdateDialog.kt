@@ -83,9 +83,9 @@ fun UpdateDialog(
                     )
                     Spacer(Modifier.height(18.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        DialogAction("稍后", colors.onSurfaceSecondary, colors.surfaceContainerHigh, onDismiss)
+                        DialogAction("忽略本次", colors.onSurfaceSecondary, colors.surfaceContainerHigh, onDismiss)
                         Spacer(Modifier.width(10.dp))
-                        DialogAction("立即更新", colors.onPrimary, colors.primary, onStart)
+                        DialogAction("下载更新", colors.onPrimary, colors.primary, onStart)
                     }
                 }
 
