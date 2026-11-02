@@ -47,7 +47,11 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
@@ -1001,10 +1005,32 @@ private fun LyricPanel(
     }
 
     BoxWithConstraints(modifier) {
+        // 上下两端做渐隐：歌词是滚动的，硬边裁断会露出半行字，很脏。
+        // 用 DstIn 蒙版（离屏合成）而不是盖一层渐变 —— 背景是模糊封面，
+        // 盖纯色块会和底色对不上。
+        val fadeEdge = 0.15f
+        val halfViewport = maxHeight / 2
+        Box(
+            Modifier
+                .fillMaxSize()
+                .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                .drawWithContent {
+                    drawContent()
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            0f to Color.Transparent,
+                            fadeEdge to Color.Black,
+                            1f - fadeEdge to Color.Black,
+                            1f to Color.Transparent,
+                        ),
+                        blendMode = BlendMode.DstIn,
+                    )
+                },
+        ) {
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(vertical = maxHeight / 2),
+            contentPadding = PaddingValues(vertical = halfViewport),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             items(lyrics.lines.size) { i ->
@@ -1016,6 +1042,7 @@ private fun LyricPanel(
                     onSeek = { onSeek(lyrics.lines[i].startMs) },
                 )
             }
+        }
         }
 
         LaunchedEffect(anchor, follow) {
@@ -1102,6 +1129,12 @@ private fun LyricLineItem(
         LyricPrefs.Align.CENTER -> Alignment.TopCenter
         LyricPrefs.Align.RIGHT -> Alignment.TopEnd
     }
+    // 放大的锚点必须跟着对齐方式走：默认从中心放大，居左时左半边会顶出容器被裁。
+    val originX = when (LyricPrefs.align) {
+        LyricPrefs.Align.LEFT -> 0f
+        LyricPrefs.Align.CENTER -> 0.5f
+        LyricPrefs.Align.RIGHT -> 1f
+    }
     val textAlign = when (LyricPrefs.align) {
         LyricPrefs.Align.LEFT -> TextAlign.Start
         LyricPrefs.Align.CENTER -> TextAlign.Center
@@ -1120,6 +1153,7 @@ private fun LyricLineItem(
                     this.alpha = alpha
                     scaleX = scale
                     scaleY = scale
+                    transformOrigin = TransformOrigin(originX, 0.5f)
                 }
                 // 点一句就跳到那一句（Apple Music 的行为）。
                 // 用无 ripple 的 clickable：歌词页是深色大字，方形的涟漪很出戏。
