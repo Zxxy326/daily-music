@@ -8,6 +8,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -43,6 +44,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.dailymusic.app.data.Auth
 import com.dailymusic.app.data.Library
+import com.dailymusic.app.data.LyricPrefs
 import com.dailymusic.app.data.Song
 import com.dailymusic.app.playback.PlayerManager
 import com.dailymusic.app.playback.SleepTimer
@@ -361,11 +363,27 @@ private fun QueueRow(song: Song, playing: Boolean, isPlaying: Boolean, onClick: 
 fun MoreSheet(song: Song, onDismiss: () -> Unit) {
     val context = LocalContext.current
     var showInfo by remember { mutableStateOf(false) }
+    var showLyricStyle by remember { mutableStateOf(false) }
     val favorite = Library.isFavorite(song.key)
 
     SheetScaffold(onDismiss) {
         SheetHandle()
-        if (showInfo) {
+        if (showLyricStyle) {
+            SheetTitle(title = "歌词显示")
+            ChipGroup(
+                label = "对齐方式",
+                options = LyricPrefs.Align.entries.map { it.label },
+                selected = LyricPrefs.Align.entries.indexOf(LyricPrefs.align),
+                onSelect = { LyricPrefs.setAlign(context, LyricPrefs.Align.entries[it]) },
+            )
+            ChipGroup(
+                label = "字号",
+                options = LyricPrefs.Size.entries.map { it.label },
+                selected = LyricPrefs.Size.entries.indexOf(LyricPrefs.size),
+                onSelect = { LyricPrefs.setSize(context, LyricPrefs.Size.entries[it]) },
+            )
+            SheetRow(icon = AppIcons.ArrowBack, title = "返回") { showLyricStyle = false }
+        } else if (showInfo) {
             SheetTitle(title = "歌曲信息")
             InfoRow("歌名", song.name)
             InfoRow("歌手", song.singer)
@@ -433,10 +451,51 @@ fun MoreSheet(song: Song, onDismiss: () -> Unit) {
                 },
             )
             SheetRow(
+                icon = AppIcons.Tune,
+                title = "歌词显示",
+                subtitle = "${LyricPrefs.align.label} · ${LyricPrefs.size.label}号",
+                onClick = { showLyricStyle = true },
+            )
+            SheetRow(
                 icon = AppIcons.MusicNote,
                 title = "歌曲信息",
                 onClick = { showInfo = true },
             )
+        }
+    }
+}
+
+@Composable
+private fun ChipGroup(
+    label: String,
+    options: List<String>,
+    selected: Int,
+    onSelect: (Int) -> Unit,
+) {
+    val colors = MiuixTheme.colorScheme
+    Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 8.dp)) {
+        Text(text = label, fontSize = 12.5.sp, color = colors.onSurfaceVariantSummary)
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            options.forEachIndexed { index, text ->
+                val on = index == selected
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(38.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(if (on) colors.primary else colors.surfaceContainerHigh)
+                        .clickable { onSelect(index) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = text,
+                        fontSize = 13.sp,
+                        fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
+                        color = if (on) colors.onPrimary else colors.onSurfaceSecondary,
+                    )
+                }
+            }
         }
     }
 }

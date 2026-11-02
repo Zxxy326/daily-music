@@ -61,6 +61,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.StrokeJoin
@@ -598,7 +599,11 @@ private fun BoxScope.WaveLyrics(
                     lineHeight = fontSize * 1.28f,
                     fontWeight = FontWeight.Black,
                     letterSpacing = 0.5.sp,
-                    color = if (sung[index]) Color.White else Color.White.copy(alpha = 0.46f),
+                    brush = tokenSweepBrush(
+                        line, position, tokens, index,
+                        sungColor = Color.White,
+                        dimColor = Color.White.copy(alpha = 0.46f),
+                    ),
                 ),
                 modifier = Modifier.graphicsLayer {
                     val p = ((enter.value - delay) / 0.46f).coerceIn(0f, 1f)
@@ -608,6 +613,42 @@ private fun BoxScope.WaveLyrics(
                 },
             )
         }
+    }
+}
+
+/**
+ * 逐字扫色（Apple Music 风格）。
+ *
+ * 不是「唱到就翻白、没唱就变灰」的硬切：把整句的进度 p 映射到每个字自己的
+ * 局部区间 [a,b]，正在唱的那个字内部再走一段渐变，光就顺着字往前淌。
+ * 和竖屏歌词页用的是同一套 [sweepFraction]，两边进度永远一致。
+ */
+private fun tokenSweepBrush(
+    line: LyricLine?,
+    position: Long,
+    tokens: List<String>,
+    index: Int,
+    sungColor: Color,
+    dimColor: Color,
+): Brush {
+    if (line == null || line.words.isEmpty()) return SolidColor(sungColor)
+    val total = tokens.sumOf { it.length }.coerceAtLeast(1)
+    val p = sweepFraction(line, position)
+    var before = 0
+    for (i in 0 until index) before += tokens[i].length
+    val len = tokens[index].length.coerceAtLeast(1)
+    val a = before.toFloat() / total
+    val b = (before + len).toFloat() / total
+    val local = ((p - a) / (b - a)).coerceIn(0f, 1f)
+    return when {
+        local <= 0f -> SolidColor(dimColor)
+        local >= 1f -> SolidColor(sungColor)
+        else -> Brush.horizontalGradient(
+            0f to sungColor,
+            local to sungColor,
+            (local + 0.35f).coerceAtMost(1f) to dimColor,
+            1f to dimColor,
+        )
     }
 }
 
@@ -904,7 +945,11 @@ private fun KtvLyricLine(
                     lineHeight = fontSize * 1.26f,
                     fontWeight = FontWeight.Bold,
                 ),
-                color = if (sung[i]) Color.White else Color.White.copy(alpha = 0.55f),
+                brush = tokenSweepBrush(
+                    line, position, tokens, i,
+                    sungColor = Color.White,
+                    dimColor = Color.White.copy(alpha = 0.55f),
+                ),
                 strokeWidth = 5f,
                 strokeColor = Color.Black.copy(alpha = 0.90f),
             )
@@ -922,7 +967,8 @@ private fun KtvLyricLine(
 private fun OutlinedText(
     text: String,
     style: TextStyle,
-    color: Color,
+    color: Color = Color.White,
+    brush: Brush? = null,
     strokeWidth: Float,
     strokeColor: Color,
     maxLines: Int = Int.MAX_VALUE,
@@ -938,7 +984,7 @@ private fun OutlinedText(
         )
         BasicText(
             text = text,
-            style = style.copy(color = color),
+            style = if (brush != null) style.copy(brush = brush) else style.copy(color = color),
             maxLines = maxLines,
         )
     }

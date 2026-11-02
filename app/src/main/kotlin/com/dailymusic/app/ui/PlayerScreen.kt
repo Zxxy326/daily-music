@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.dailymusic.app.data.Library
 import com.dailymusic.app.data.LyricLine
+import com.dailymusic.app.data.LyricPrefs
 import com.dailymusic.app.data.Lyrics
 import com.dailymusic.app.data.Song
 import com.dailymusic.app.playback.PlayOrder
@@ -1090,40 +1091,61 @@ private fun LyricLineItem(
         label = "lyric-pad",
     )
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .graphicsLayer {
-                this.alpha = alpha
-                scaleX = scale
-                scaleY = scale
-            }
-            // 点一句就跳到那一句（Apple Music 的行为）。
-            // 用无 ripple 的 clickable：歌词页是深色大字，方形的涟漪很出戏。
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onSeek,
+    // 用户偏好：对齐方式 + 字号
+    val hAlign = when (LyricPrefs.align) {
+        LyricPrefs.Align.LEFT -> Alignment.Start
+        LyricPrefs.Align.CENTER -> Alignment.CenterHorizontally
+        LyricPrefs.Align.RIGHT -> Alignment.End
+    }
+    val boxAlign = when (LyricPrefs.align) {
+        LyricPrefs.Align.LEFT -> Alignment.TopStart
+        LyricPrefs.Align.CENTER -> Alignment.TopCenter
+        LyricPrefs.Align.RIGHT -> Alignment.TopEnd
+    }
+    val textAlign = when (LyricPrefs.align) {
+        LyricPrefs.Align.LEFT -> TextAlign.Start
+        LyricPrefs.Align.CENTER -> TextAlign.Center
+        LyricPrefs.Align.RIGHT -> TextAlign.End
+    }
+    val baseSp = LyricPrefs.baseSp * LyricPrefs.size.scale
+
+    // 当前行会被放大 1.34 倍。**布局宽度必须同步缩到 1/1.34**，否则长句按原宽度排版、
+    // 再被放大，两边就会溢出容器被裁掉（「I love my one and only ba」那种）。
+    // 宽度用 fillMaxWidth(1/scale)，配合外层 Box 的对齐，锚定边不会跑。
+    Box(Modifier.fillMaxWidth(), contentAlignment = boxAlign) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth(1f / scale)
+                .graphicsLayer {
+                    this.alpha = alpha
+                    scaleX = scale
+                    scaleY = scale
+                }
+                // 点一句就跳到那一句（Apple Music 的行为）。
+                // 用无 ripple 的 clickable：歌词页是深色大字，方形的涟漪很出戏。
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onSeek,
+                )
+                .padding(vertical = vPad),
+            horizontalAlignment = hAlign,
+        ) {
+            val textStyle = TextStyle(
+                // 当前行走卡拉 OK 扫色；其余行给纯白，靠外层 alpha 压暗。
+                brush = if (active) sweepBrush(line, position) else SolidColor(Color.White),
+                fontSize = baseSp.sp,
+                lineHeight = (baseSp * 1.45f).sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = textAlign,
             )
-            .padding(vertical = vPad),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        val textStyle = TextStyle(
-            // 当前行走卡拉 OK 扫色；其余行给纯白，靠外层 alpha 压暗。
-            brush = if (active) sweepBrush(line, position) else SolidColor(Color.White),
-            fontSize = 21.sp,
-            lineHeight = 31.sp,
-            fontWeight = FontWeight.Bold,
-            textAlign = TextAlign.Center,
-        )
-        // 越远的行越模糊 —— Apple Music 的「景深」一半来自透明度，一半来自这层虚化。
-        val farBlur = when {
-            distance <= 1 -> 0.dp
-            distance == 2 -> 0.8.dp
-            distance == 3 -> 1.6.dp
-            else -> 2.4.dp
-        }
-        Box(contentAlignment = Alignment.Center) {
+            // 越远的行越模糊 —— Apple Music 的「景深」一半来自透明度，一半来自这层虚化。
+            val farBlur = when {
+                distance <= 1 -> 0.dp
+                distance == 2 -> 0.8.dp
+                distance == 3 -> 1.6.dp
+                else -> 2.4.dp
+            }
             // 辉光用文字阴影做，而不是「再画一遍 + 模糊」：
             // 后者会把整行的外接矩形一起糊成一块亮斑，在深色底上非常明显。
             // 阴影是逐字形渲染的，光晕才会贴着每个字的轮廓。
@@ -1140,30 +1162,32 @@ private fun LyricLineItem(
                 } else {
                     textStyle
                 },
-                modifier = if (farBlur > 0.dp) Modifier.blur(farBlur) else Modifier,
+                modifier = Modifier.fillMaxWidth().let {
+                    if (farBlur > 0.dp) it.blur(farBlur) else it
+                },
             )
-        }
-        if (active) {
-            line.translation?.let { tr ->
-                Text(
-                    text = tr,
-                    modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-                    fontSize = 12.5.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color.White.copy(alpha = 0.50f),
-                    textAlign = TextAlign.Center,
-                    maxLines = 2,
-                )
-            }
-            line.romaji?.let { rj ->
-                Text(
-                    text = rj,
-                    modifier = Modifier.fillMaxWidth().padding(top = 3.dp),
-                    fontSize = 11.sp,
-                    color = Color.White.copy(alpha = 0.36f),
-                    textAlign = TextAlign.Center,
-                    maxLines = 2,
-                )
+            if (active) {
+                line.translation?.let { tr ->
+                    Text(
+                        text = tr,
+                        modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                        fontSize = (baseSp * 0.60f).sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White.copy(alpha = 0.50f),
+                        textAlign = textAlign,
+                        maxLines = 2,
+                    )
+                }
+                line.romaji?.let { rj ->
+                    Text(
+                        text = rj,
+                        modifier = Modifier.fillMaxWidth().padding(top = 3.dp),
+                        fontSize = (baseSp * 0.52f).sp,
+                        color = Color.White.copy(alpha = 0.36f),
+                        textAlign = textAlign,
+                        maxLines = 2,
+                    )
+                }
             }
         }
     }

@@ -181,11 +181,6 @@ fun SettingsScreen(
                 color = MiuixTheme.colorScheme.onSurfaceSecondary,
             )
             Credit("apple-music-like-lyrics", "Apple Music 风格逐字歌词渲染参考")
-            Credit("Lyricon", "桌面歌词 Provider（词幕 / 悬浮歌词）")
-            Credit("SuperLyric", "系统级实时歌词（lyricon / SuperLyric 协议）")
-            Credit("LyricInfo", "蓝牙歌词推送（AVRCP / LyricInfo）参考")
-            Credit("ColorOS-Live-Lyrics-Bridge", "ColorOS 息屏歌词桥接（lyricInfo 开放协议）")
-            Credit("AM-Lyrics-for-Flyme / FlymeLyricBridge", "魅族 Flyme 状态栏歌词的独立实现，用于机制交叉验证")
             Spacer(Modifier.height(4.dp))
             Text(
                 text = "还有每一个愿意把歌听完的人。",

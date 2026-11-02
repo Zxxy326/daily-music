@@ -4,6 +4,7 @@ import android.app.Application
 import com.dailymusic.app.data.Auth
 import com.dailymusic.app.data.FavoriteCloud
 import com.dailymusic.app.data.Library
+import com.dailymusic.app.data.LyricPrefs
 import com.dailymusic.app.data.YouthVip
 import com.dailymusic.app.native.KugouServer
 import kotlinx.coroutines.CompletableDeferred
@@ -46,6 +47,7 @@ class DailyMusicApp : Application() {
         // 收藏要同步到账号「我喜欢」，它的 listid / fileid 缓存同样要首帧就绪。
         FavoriteCloud.init(this)
         Auth.init(this)
+        LyricPrefs.load(this)
         // 签到状态要在首帧之前就绪：没有它「我的」页面会闪一下「未签到」。
         YouthVip.init(this)
         AppBootstrap.launch(this)
