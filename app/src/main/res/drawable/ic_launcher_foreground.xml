@@ -1,15 +1,44 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  黑胶唱片：盘面 + 三道纹路 + 橙色标签 + 中心孔。
+  自适应图标的安全区是 72x72（108 的中间部分），所以盘面半径取 30，
+  留出足够的边距，无论被裁成圆角方形还是圆形都不会切到。
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- 八分音符：符干 + 符头 + 符尾 -->
+    <!-- 盘面 -->
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M64,28 L64,62 A11,9 0 1,1 58,54 L58,28 Z" />
+        android:fillColor="#12121A"
+        android:pathData="M24,54 a30,30 0 1,0 60,0 a30,30 0 1,0 -60,0" />
+
+    <!-- 纹路 -->
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M64,28 C70,31 76,36 78,44 C74,38 69,35 64,34 Z" />
+        android:fillColor="#00000000"
+        android:strokeColor="#1FFFFFFF"
+        android:strokeWidth="0.9"
+        android:pathData="M28.5,54 a25.5,25.5 0 1,0 51,0 a25.5,25.5 0 1,0 -51,0" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#1FFFFFFF"
+        android:strokeWidth="0.9"
+        android:pathData="M33,54 a21,21 0 1,0 42,0 a21,21 0 1,0 -42,0" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#1FFFFFFF"
+        android:strokeWidth="0.9"
+        android:pathData="M37.5,54 a16.5,16.5 0 1,0 33,0 a16.5,16.5 0 1,0 -33,0" />
+
+    <!-- 标签 -->
+    <path
+        android:fillColor="#FF8A4C"
+        android:pathData="M43.5,54 a10.5,10.5 0 1,0 21,0 a10.5,10.5 0 1,0 -21,0" />
+
+    <!-- 中心孔 -->
+    <path
+        android:fillColor="#12121A"
+        android:pathData="M51.4,54 a2.6,2.6 0 1,0 5.2,0 a2.6,2.6 0 1,0 -5.2,0" />
 </vector>

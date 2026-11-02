@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 底色：中心偏亮的紫罗兰径向渐变，和 App 内的玻璃/渐变语言一致 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:type="radial"
+        android:centerX="0.5"
+        android:centerY="0.42"
+        android:gradientRadius="72%p"
+        android:startColor="#7C6CF0"
+        android:endColor="#242058" />
+</shape>

@@ -168,12 +168,25 @@ fun SettingsScreen(
 
     if (showThanks) {
         InfoDialog(title = "致谢名单", onDismiss = { showThanks = false }) {
-            Credit("Miuix", "HyperOS 风格的 Compose 组件库，界面的玻璃、开关、按钮都靠它")
+            Credit("Miuix", "HyperOS 风格的 Compose 组件库")
             Credit("AndroidX Media3 / ExoPlayer", "播放内核")
             Credit("JNA", "直接调用 Rust 导出的 C 符号，绕开 JNI 包名耦合")
-            Credit("md3Music", "上游的 Rust 服务与酷狗接口实现，本项目的接口层与它逐行对齐")
-            Credit("酷狗概念版", "音源与账号能力（非官方接口，仅供学习研究）")
+            Credit("md3Music", "上游的 Rust 服务与接口实现")
             Credit("阿里妈妈方圆体", "底栏与歌词动效页的字体。阿里巴巴免费商用字体，本项目按 GB2312 子集化后打包")
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = "歌词相关实现参考",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                color = MiuixTheme.colorScheme.onSurfaceSecondary,
+            )
+            Credit("apple-music-like-lyrics", "Apple Music 风格逐字歌词渲染参考")
+            Credit("Lyricon", "桌面歌词 Provider（词幕 / 悬浮歌词）")
+            Credit("SuperLyric", "系统级实时歌词（lyricon / SuperLyric 协议）")
+            Credit("LyricInfo", "蓝牙歌词推送（AVRCP / LyricInfo）参考")
+            Credit("lyricy", "本地音乐标签编辑 / Lyricy 外部编辑协作")
+            Credit("ColorOS-Live-Lyrics-Bridge", "ColorOS 息屏歌词桥接（lyricInfo 开放协议）")
+            Credit("AM-Lyrics-for-Flyme / FlymeLyricBridge", "魅族 Flyme 状态栏歌词的独立实现，用于机制交叉验证")
             Spacer(Modifier.height(4.dp))
             Text(
                 text = "还有每一个愿意把歌听完的人。",

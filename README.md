@@ -86,6 +86,18 @@
 | [md3Music](https://github.com/zzyoxml/md3Music) | 上游的 Rust 服务与接口实现 |
 | 阿里妈妈方圆体 | 底栏与歌词动效页的字体，阿里巴巴免费商用字体，本项目按 GB2312 子集化后打包 |
 
+歌词相关实现参考：
+
+| 项目 | 参考内容 |
+|---|---|
+| [apple-music-like-lyrics](https://github.com/Steve-xmh/applemusic-like-lyrics) | Apple Music 风格逐字歌词渲染 |
+| Lyricon | 桌面歌词 Provider（词幕 / 悬浮歌词） |
+| SuperLyric | 系统级实时歌词（lyricon / SuperLyric 协议） |
+| LyricInfo | 蓝牙歌词推送（AVRCP / LyricInfo） |
+| lyricy | 本地音乐标签编辑 / Lyricy 外部编辑协作 |
+| ColorOS-Live-Lyrics-Bridge | ColorOS 息屏歌词桥接（lyricInfo 开放协议） |
+| AM-Lyrics-for-Flyme / FlymeLyricBridge | 魅族 Flyme 状态栏歌词的独立实现，用于机制交叉验证 |
+
 还有每一个愿意把歌听完的人。
 
 ## 请作者喝杯咖啡
