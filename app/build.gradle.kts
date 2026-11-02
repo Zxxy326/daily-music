@@ -33,8 +33,9 @@ android {
         // 1.0.8 字号与节奏：歌词缩 1/3 / 波纹 4 条 / 逐字脉冲驱动 / 底栏字放大。
         // 1.0.9 字体与细节：方圆体 / 霞鹜文楷 / 封面旋转 / 跑马灯渐隐 / 更新防连点。
         // 1.1.0 横屏改版：KTV 两句居中 / 新增精简时钟 / 榜单点不进去。
-        versionCode = 12
-        versionName = "1.1.0"
+        // 1.2.0 图标与歌词：小耳机兽图标 / 竖屏歌词 Apple Music 化 / 播放顺序。
+        versionCode = 13
+        versionName = "1.2.0"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")

@@ -9,6 +9,8 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -212,6 +214,7 @@ internal fun LyricEffectScreen(
                 song = song,
                 lyrics = lyrics,
                 position = position,
+                chromeVisible = chromeVisible,
             )
         }
 
@@ -350,10 +353,11 @@ private fun EffectPage(
     song: Song,
     lyrics: Lyrics,
     position: Long,
+    chromeVisible: Boolean,
 ) {
     when (effect) {
         LyricEffect.WAVE -> WavePage(song, lyrics, position)
-        LyricEffect.KTV -> KtvPage(song, lyrics, position)
+        LyricEffect.KTV -> KtvPage(song, lyrics, position, chromeVisible)
         LyricEffect.CLOCK -> ClockPage(song, lyrics, position)
     }
 }
@@ -761,7 +765,7 @@ private fun DrawScope.drawWaveField(
  * 先一遍 `drawStyle = Stroke` 的黑色描边，再压一遍实心白字。
  */
 @Composable
-private fun KtvPage(song: Song, lyrics: Lyrics, position: Long) {
+private fun KtvPage(song: Song, lyrics: Lyrics, position: Long, chromeVisible: Boolean) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val wPx = constraints.maxWidth.toFloat()
         val hPx = constraints.maxHeight.toFloat()
@@ -788,12 +792,21 @@ private fun KtvPage(song: Song, lyrics: Lyrics, position: Long) {
         // 按「两句一组」取整：anchor 落在组内第 1 句或第 2 句时都还是同一组
         val pairStart = (anchor / 2) * 2
 
+        // 底部操作区收起后，画面上方会空出一大块，整组内容显得「挂在天上」。
+        // 这里让歌名和歌词一起往下沉一点，把视觉重心拉回中间。
+        val sink by animateDpAsState(
+            targetValue = if (chromeVisible) 0.dp else with(density) { (hPx * 0.055f).toDp() },
+            animationSpec = tween(420, easing = FastOutSlowInEasing),
+            label = "ktv-sink",
+        )
+
         // 歌名（只描边）+ 歌手
         Column(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
-                .padding(top = with(density) { (hPx * 0.14f).toDp() }),
+                .padding(top = with(density) { (hPx * 0.14f).toDp() })
+                .offset(y = sink),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             OutlinedText(
@@ -833,7 +846,7 @@ private fun KtvPage(song: Song, lyrics: Lyrics, position: Long) {
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .fillMaxWidth(0.85f)
-                .offset(y = with(density) { (hPx * 0.585f).toDp() }),
+                .offset(y = with(density) { (hPx * 0.585f).toDp() } + sink),
             transitionSpec = {
                 (fadeIn(tween(420)) + slideInVertically(tween(420)) { it / 5 }) togetherWith
                     (fadeOut(tween(280)) + slideOutVertically(tween(280)) { -it / 5 })
