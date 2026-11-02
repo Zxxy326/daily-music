@@ -86,6 +86,24 @@ fun SearchScreen(
     val currentKey = PlayerManager.current?.key
     val playing = PlayerManager.isPlaying
 
+    // 搜的是人、是专辑、还是歌？酷狗只给了一个「按歌曲搜」的接口，
+    // 所以这里按结果反推意图：命中的歌里大半都是同一个歌手，那用户多半在搜人。
+    val q = query.trim()
+    val artistName = remember(results, q) { dominantArtist(results, q) }
+    val albumName = remember(results, q) { dominantAlbum(results, q) }
+    val kind = when {
+        artistName != null -> SearchKind.ARTIST
+        albumName != null -> SearchKind.ALBUM
+        else -> SearchKind.SONG
+    }
+    // 点开卡片后只看这一类，再点一次取消
+    var onlyKind by remember(results, kind) { mutableStateOf(false) }
+    val shown = if (!onlyKind) results else when (kind) {
+        SearchKind.ARTIST -> results.filter { it.singer.contains(artistName.orEmpty(), true) }
+        SearchKind.ALBUM -> results.filter { it.albumName.equals(albumName.orEmpty(), true) }
+        SearchKind.SONG -> results
+    }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding() + 24.dp),
@@ -209,18 +227,158 @@ fun SearchScreen(
         }
 
         if (results.isNotEmpty()) {
-            item { SectionTitle("搜索结果", trailing = "${results.size} 首") }
-            items(results, key = { it.key }) { song ->
+            if (kind != SearchKind.SONG) {
+                item {
+                    SearchHeaderCard(
+                        kind = kind,
+                        title = if (kind == SearchKind.ARTIST) artistName.orEmpty() else albumName.orEmpty(),
+                        subtitle = if (kind == SearchKind.ARTIST) {
+                            "歌手"
+                        } else {
+                            results.firstOrNull { it.albumName == albumName }?.singer.orEmpty()
+                        },
+                        count = if (kind == SearchKind.ARTIST) {
+                            results.count { it.singer.contains(artistName.orEmpty(), true) }
+                        } else {
+                            results.count { it.albumName.equals(albumName.orEmpty(), true) }
+                        },
+                        coverUrl = results.firstOrNull {
+                            if (kind == SearchKind.ARTIST) it.singer.contains(artistName.orEmpty(), true)
+                            else it.albumName.equals(albumName.orEmpty(), true)
+                        }?.cover(300),
+                        active = onlyKind,
+                        onToggle = { onlyKind = !onlyKind },
+                    )
+                }
+            }
+            item {
+                SectionTitle(
+                    if (kind == SearchKind.SONG) "搜索结果" else "单曲",
+                    trailing = "${shown.size} 首",
+                )
+            }
+            items(shown, key = { it.key }) { song ->
                 SongRow(
                     song = song,
                     isCurrent = song.key == currentKey,
                     isPlaying = playing,
-                    onClick = { onPlay(song, results) },
+                    onClick = { onPlay(song, shown) },
                     showFavorite = true,
                     favorite = Library.isFavorite(song.key),
                     onToggleFavorite = { Library.toggleFavorite(song) },
                 )
             }
+        }
+    }
+}
+
+
+/** 搜索意图：搜人 / 搜专辑 / 搜歌。 */
+private enum class SearchKind { ARTIST, ALBUM, SONG }
+
+/**
+ * 从搜索结果反推「用户搜的是不是某个歌手」。
+ *
+ * 酷狗只给按歌曲搜的接口，没有独立的歌手/专辑接口，所以只能看结果分布：
+ * 前 20 条里至少 4 条是同一个歌手、且占了一半以上，就认为在搜人。
+ * 返回的歌名要是整串匹配（忽略大小写）才算，避免「周杰伦」把「周杰伦的徒弟」也算进去。
+ */
+private fun dominantArtist(results: List<Song>, query: String): String? {
+    if (query.isEmpty() || results.size < 4) return null
+    val hits = results.mapNotNull { song ->
+        song.singer.split("/", "、", ",", "&", "；", ";")
+            .map { it.trim() }
+            .firstOrNull { it.equals(query, ignoreCase = true) }
+    }
+    if (hits.isEmpty()) return null
+    val top = hits.groupingBy { it }.eachCount().maxByOrNull { it.value } ?: return null
+    return if (top.value >= 4 && top.value * 2 >= results.size) top.key else null
+}
+
+/** 同理判断专辑：整串匹配专辑名，至少 3 条、且占比够高。 */
+private fun dominantAlbum(results: List<Song>, query: String): String? {
+    if (query.isEmpty() || results.size < 3) return null
+    val hits = results.map { it.albumName.trim() }.filter { it.equals(query, ignoreCase = true) }
+    if (hits.size < 3) return null
+    return hits.groupingBy { it }.eachCount().maxByOrNull { it.value }?.key
+}
+
+/**
+ * 搜索结果的「头图卡片」：搜人时显示歌手、搜专辑时显示专辑。
+ *
+ * 没有歌手/专辑接口，头像就用 TA 在结果里的第一首歌封面 —— 比空着好看，
+ * 也不会假装是官方资料页。点一下只在当前结果里筛选，再点取消。
+ */
+@Composable
+private fun SearchHeaderCard(
+    kind: SearchKind,
+    title: String,
+    subtitle: String,
+    count: Int,
+    coverUrl: String?,
+    active: Boolean,
+    onToggle: () -> Unit,
+) {
+    val colors = MiuixTheme.colorScheme
+    val isArtist = kind == SearchKind.ARTIST
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 4.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .background(colors.surfaceContainer)
+            .clickable(onClick = onToggle)
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(64.dp)
+                .clip(if (isArtist) CircleShape else RoundedCornerShape(16.dp))
+                .background(colors.surfaceContainerHigh),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (coverUrl != null) {
+                RemoteImage(
+                    url = coverUrl,
+                    modifier = Modifier.fillMaxSize(),
+                    shape = if (isArtist) CircleShape else RoundedCornerShape(16.dp),
+                    showFallbackIcon = false,
+                )
+            } else {
+                TintedIcon(AppIcons.Person, colors.onSurfaceVariantSummary, 28.dp)
+            }
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = title,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Bold,
+                color = colors.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(3.dp))
+            Text(
+                text = if (isArtist) "$subtitle · $count 首" else "$subtitle · 专辑 · $count 首",
+                fontSize = 12.sp,
+                color = colors.onSurfaceVariantSummary,
+                maxLines = 1,
+            )
+        }
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(999.dp))
+                .background(if (active) colors.primary else colors.surfaceContainerHigh)
+                .padding(horizontal = 14.dp, vertical = 7.dp),
+        ) {
+            Text(
+                text = if (active) "看全部" else if (isArtist) "只看 TA" else "只听这张",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = if (active) colors.onPrimary else colors.onSurfaceSecondary,
+            )
         }
     }
 }

@@ -106,6 +106,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 
 // 歌词页固定深色（视觉稿第 ③ 屏就是这么定的），所以这套颜色不跟随系统。
+/** 放大后保留的安全边距比例：1.0 会贴死容器边缘，缩放取整时可能被裁 1~2px。 */
+private const val SAFE_FRACTION = 0.94f
+
 internal val LyricSung = Color.White
 
 /**
@@ -1009,6 +1012,7 @@ private fun LyricPanel(
         // 用 DstIn 蒙版（离屏合成）而不是盖一层渐变 —— 背景是模糊封面，
         // 盖纯色块会和底色对不上。
         val fadeEdge = 0.15f
+        val sideEdge = 0.05f
         val halfViewport = maxHeight / 2
         Box(
             Modifier
@@ -1016,11 +1020,22 @@ private fun LyricPanel(
                 .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
                 .drawWithContent {
                     drawContent()
+                    // 上下渐隐
                     drawRect(
                         brush = Brush.verticalGradient(
                             0f to Color.Transparent,
                             fadeEdge to Color.Black,
                             1f - fadeEdge to Color.Black,
+                            1f to Color.Transparent,
+                        ),
+                        blendMode = BlendMode.DstIn,
+                    )
+                    // 左右也化开，避免长句在屏幕边缘被「切断」
+                    drawRect(
+                        brush = Brush.horizontalGradient(
+                            0f to Color.Transparent,
+                            sideEdge to Color.Black,
+                            1f - sideEdge to Color.Black,
                             1f to Color.Transparent,
                         ),
                         blendMode = BlendMode.DstIn,
@@ -1144,11 +1159,12 @@ private fun LyricLineItem(
 
     // 当前行会被放大 1.34 倍。**布局宽度必须同步缩到 1/1.34**，否则长句按原宽度排版、
     // 再被放大，两边就会溢出容器被裁掉（「I love my one and only ba」那种）。
-    // 宽度用 fillMaxWidth(1/scale)，配合外层 Box 的对齐，锚定边不会跑。
+    // 再留 6% 安全边距：缩放锚点 + 取整误差都可能让贴边的那一侧差几个像素。
+    // 宽度用 fillMaxWidth(SAFE/scale)，配合外层 Box 的对齐，锚定边不会跑。
     Box(Modifier.fillMaxWidth(), contentAlignment = boxAlign) {
         Column(
             modifier = Modifier
-                .fillMaxWidth(1f / scale)
+                .fillMaxWidth(SAFE_FRACTION / scale)
                 .graphicsLayer {
                     this.alpha = alpha
                     scaleX = scale
