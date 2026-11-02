@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 底色：中心偏亮的紫罗兰径向渐变，和 App 内的玻璃/渐变语言一致 -->
+<!-- 底色：和角色图一致的雾蓝，中间稍亮一圈，避免大面积纯色发闷 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
     <gradient
         android:type="radial"
         android:centerX="0.5"
-        android:centerY="0.42"
-        android:gradientRadius="72%p"
-        android:startColor="#7C6CF0"
-        android:endColor="#242058" />
+        android:centerY="0.46"
+        android:gradientRadius="78%p"
+        android:startColor="#A9D2EC"
+        android:endColor="#7FB4DA" />
 </shape>

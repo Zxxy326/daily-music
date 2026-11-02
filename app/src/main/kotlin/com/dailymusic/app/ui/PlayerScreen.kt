@@ -40,12 +40,15 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -622,6 +625,8 @@ fun LyricsScreen(onClose: () -> Unit) {
     SystemBarIcons(light = false)
     val context = LocalContext.current
     val song = PlayerManager.current ?: return
+    // 动态取色：辉光颜色跟着封面走
+    val palette = rememberCoverPalette(song.cover(640))
     val lyrics = PlayerManager.lyrics
     val position = PlayerManager.positionMs
     val duration = PlayerManager.durationMs
@@ -804,6 +809,8 @@ fun LyricsScreen(onClose: () -> Unit) {
                     else -> LyricPanel(
                         lyrics = lyrics,
                         position = position,
+                        // 用主色掺一点白：纯主色在深底上会显得脏，纯白又没有「跟着封面变」的感觉
+                        glowColor = lerp(palette.dom, Color.White, 0.30f),
                         onSeek = { PlayerManager.seekTo(it) },
                     )
                 }
@@ -967,6 +974,7 @@ private fun ThinProgress(position: Long, duration: Long, onSeek: (Long) -> Unit)
 private fun LyricPanel(
     lyrics: Lyrics,
     position: Long,
+    glowColor: Color,
     onSeek: (Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -1003,6 +1011,7 @@ private fun LyricPanel(
                     line = lyrics.lines[i],
                     distance = abs(i - anchor),
                     position = position,
+                    glowColor = glowColor,
                     onSeek = { onSeek(lyrics.lines[i].startMs) },
                 )
             }
@@ -1055,6 +1064,7 @@ private fun LyricLineItem(
     line: LyricLine,
     distance: Int,
     position: Long,
+    glowColor: Color,
     onSeek: () -> Unit,
 ) {
     val active = distance == 0
@@ -1098,17 +1108,41 @@ private fun LyricLineItem(
             .padding(vertical = vPad),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        BasicText(
-            text = line.text,
-            style = TextStyle(
-                // 当前行走卡拉 OK 扫色；其余行给纯白，靠外层 alpha 压暗。
-                brush = if (active) sweepBrush(line, position) else SolidColor(Color.White),
-                fontSize = 21.sp,
-                lineHeight = 31.sp,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center,
-            ),
+        val textStyle = TextStyle(
+            // 当前行走卡拉 OK 扫色；其余行给纯白，靠外层 alpha 压暗。
+            brush = if (active) sweepBrush(line, position) else SolidColor(Color.White),
+            fontSize = 21.sp,
+            lineHeight = 31.sp,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
         )
+        // 越远的行越模糊 —— Apple Music 的「景深」一半来自透明度，一半来自这层虚化。
+        val farBlur = when {
+            distance <= 1 -> 0.dp
+            distance == 2 -> 0.8.dp
+            distance == 3 -> 1.6.dp
+            else -> 2.4.dp
+        }
+        Box(contentAlignment = Alignment.Center) {
+            // 辉光用文字阴影做，而不是「再画一遍 + 模糊」：
+            // 后者会把整行的外接矩形一起糊成一块亮斑，在深色底上非常明显。
+            // 阴影是逐字形渲染的，光晕才会贴着每个字的轮廓。
+            BasicText(
+                text = line.text,
+                style = if (active) {
+                    textStyle.copy(
+                        shadow = Shadow(
+                            color = glowColor.copy(alpha = 0.9f),
+                            offset = Offset.Zero,
+                            blurRadius = 26f,
+                        ),
+                    )
+                } else {
+                    textStyle
+                },
+                modifier = if (farBlur > 0.dp) Modifier.blur(farBlur) else Modifier,
+            )
+        }
         if (active) {
             line.translation?.let { tr ->
                 Text(
@@ -1162,10 +1196,15 @@ internal fun sweepFraction(line: LyricLine, position: Long): Float {
 
 internal fun sweepBrush(line: LyricLine, position: Long): Brush {
     val p = sweepFraction(line, position).coerceIn(0f, 1f)
+    // 软边：Apple Music 不是「啪」一下变白，而是有一条约一个半字宽的过渡带。
+    // 硬切在中文大字上会像被刀切了一道，很难看。
+    val lead = 0.045f
+    val a = (p - lead).coerceIn(0f, 1f)
+    val b = (p + lead * 0.4f).coerceIn(0f, 1f)
     return Brush.horizontalGradient(
         0f to LyricSung,
-        p to LyricSung,
-        p to LyricUnsung,
+        a to LyricSung,
+        b to LyricUnsung,
         1f to LyricUnsung,
     )
 }

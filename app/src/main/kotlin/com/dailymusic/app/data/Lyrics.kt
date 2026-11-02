@@ -237,6 +237,7 @@ object LyricParser {
         artist: String,
     ): List<LyricLine> {
         var from = 0
+        var skippedUnknownHead = false
         while (from < lines.size) {
             val text = lines[from].text
             // 空行也要一起吃掉：KRC 经常以一条 `[0,0]` 的空行开头，
@@ -245,10 +246,22 @@ object LyricParser {
                 from++
                 continue
             }
-            if (!isCreditLine(text) && !isTitleLine(text, title, artist) &&
-                !isBareTitleLine(text) && !isNoticeLine(text)
-            ) break
-            from++
+            if (isCreditLine(text) || isTitleLine(text, title, artist) ||
+                isBareTitleLine(text) || isNoticeLine(text)
+            ) {
+                from++
+                continue
+            }
+            // 兜底：第一行认不出来，但它很短、又紧跟一片署名 —— 那就是标题行换了种写法
+            // （「《歌名》歌手」「歌名 歌手」…）。放它过去，否则整段署名都会留下。
+            if (!skippedUnknownHead && from == 0 && text.length <= 40 &&
+                lines.getOrNull(1)?.let { isCreditLine(it.text) } == true
+            ) {
+                skippedUnknownHead = true
+                from++
+                continue
+            }
+            break
         }
         if (from == 0 || lines.size - from < 4) return lines
         return lines.subList(from, lines.size)
@@ -289,6 +302,8 @@ object LyricParser {
         "鼓", "键盘", "弦乐", "统筹", "企划", "策划", "营销", "宣传", "文案", "设计",
         "协力", "美术", "摄影", "导演", "剪辑", "后期", "总监", "经理", "助理", "版权",
         "授权", "演唱", "原唱", "翻唱", "词", "曲", "编", "op", "sp",
+        // 常见但没有「作词/作曲」那么规范的写法
+        "词曲", "制作公司", "发行公司", "音乐发行", "录音室", "混音师", "母带工程师",
     )
 
     /**
