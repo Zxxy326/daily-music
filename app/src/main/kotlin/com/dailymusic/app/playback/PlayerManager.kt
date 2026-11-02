@@ -40,6 +40,20 @@ import java.io.IOException
  * 加载时才换真实地址，见 [PlayUrlStore]）。所以上一首/下一首/自动续播都是
  * ExoPlayer 的原生行为，通知栏和蓝牙耳机也能直接用。
  */
+/**
+ * 播放顺序。
+ *
+ * 三档循环切换，对应 MediaController 的 shuffleModeEnabled + repeatMode：
+ * - 列表循环：repeat ALL，不随机
+ * - 单曲循环：repeat ONE
+ * - 随机播放：shuffle 开 + repeat ALL（不开 ALL 的话随机到队尾就停了）
+ */
+enum class PlayOrder(val label: String) {
+    LIST("列表循环"),
+    ONE("单曲循环"),
+    SHUFFLE("随机播放"),
+}
+
 object PlayerManager {
 
     private var controller: MediaController? = null
@@ -88,6 +102,10 @@ object PlayerManager {
         private set
 
     var lyricsLoading by mutableStateOf(false)
+        private set
+
+    /** 播放顺序：列表循环 / 单曲循环 / 随机。 */
+    var playOrder by mutableStateOf(PlayOrder.LIST)
         private set
 
     /** 实际拿到的码率（用于如实显示，而不是显示请求的档位）。 */
@@ -202,6 +220,13 @@ object PlayerManager {
                 quality = it
                 PlayUrlStore.quality = it
             }
+        // 恢复播放顺序，和音质一样要跨冷启动记住
+        context.applicationContext
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(K_ORDER, null)
+            ?.let { name -> PlayOrder.entries.firstOrNull { it.name == name } }
+            ?.let { playOrder = it }
+
         val deferred = CompletableDeferred<MediaController?>()
         connected = deferred
         val token = SessionToken(context, ComponentName(context, PlaybackService::class.java))
@@ -212,6 +237,7 @@ object PlayerManager {
                 val c = runCatching { f.get() }.getOrNull()
                 controller = c
                 c?.addListener(listener)
+                applyPlayOrder(c)
                 deferred.complete(c)
                 startTicker()
             },
@@ -371,6 +397,41 @@ object PlayerManager {
         if (forcePlay) play()
     }
 
+    /** 点一下切一档：列表循环 → 单曲循环 → 随机 → 列表循环。 */
+    fun cyclePlayOrder(context: Context) {
+        val next = when (playOrder) {
+            PlayOrder.LIST -> PlayOrder.ONE
+            PlayOrder.ONE -> PlayOrder.SHUFFLE
+            PlayOrder.SHUFFLE -> PlayOrder.LIST
+        }
+        setPlayOrder(context, next)
+    }
+
+    fun setPlayOrder(context: Context, order: PlayOrder) {
+        playOrder = order
+        context.applicationContext
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putString(K_ORDER, order.name)
+            .apply()
+        applyPlayOrder(controller)
+    }
+
+    /**
+     * 真正下发给播放器。
+     *
+     * 注意「随机」也要把 repeatMode 设成 ALL —— 否则随机到队尾就停了，
+     * 用户看到的是「随机播放放几首就没了」。
+     */
+    private fun applyPlayOrder(c: MediaController?) {
+        if (c == null) return
+        c.shuffleModeEnabled = playOrder == PlayOrder.SHUFFLE
+        c.repeatMode = when (playOrder) {
+            PlayOrder.ONE -> Player.REPEAT_MODE_ONE
+            PlayOrder.LIST, PlayOrder.SHUFFLE -> Player.REPEAT_MODE_ALL
+        }
+    }
+
     fun setQuality(context: Context, q: String) {
         if (q == quality) return
         quality = q
@@ -432,6 +493,7 @@ object PlayerManager {
 
     private const val PREFS = "dailymusic_player"
     private const val K_QUALITY = "quality"
+    private const val K_ORDER = "play_order"
 
     /** 认得的音质代号，避免旧版本/脏数据把请求打到不存在的档位。 */
     private val KNOWN_QUALITIES = setOf(

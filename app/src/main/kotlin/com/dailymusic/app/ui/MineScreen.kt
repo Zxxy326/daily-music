@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
@@ -33,6 +34,7 @@ import com.dailymusic.app.data.Profile
 import com.dailymusic.app.data.YouthVip
 import com.dailymusic.app.data.vipExpireText
 import com.dailymusic.app.native.KugouServer
+import com.dailymusic.app.playback.PlayOrder
 import com.dailymusic.app.playback.PlayerManager
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -55,6 +57,7 @@ fun MineScreen(
     onLogout: () -> Unit,
 ) {
     val colors = MiuixTheme.colorScheme
+    val context = LocalContext.current
 
     // 每次进「我的」都刷一次：账号资料 + 签到状态。用户可能在别的设备上签过/换过头像。
     // 顺序不能反：Profile.refresh() 负责续期（token 过期时换新），
@@ -282,6 +285,46 @@ fun MineScreen(
 
         item { Spacer(Modifier.height(12.dp)) }
 
+        // ---- 播放顺序 ----
+        item {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .background(colors.surfaceContainer, RoundedCornerShape(20.dp))
+                    .padding(16.dp),
+            ) {
+                Text("播放顺序", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = colors.onSurface)
+                Spacer(Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PlayOrder.entries.forEach { order ->
+                        val selected = PlayerManager.playOrder == order
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(44.dp)
+                                .background(
+                                    if (selected) colors.primaryContainer else colors.surfaceContainerHigh,
+                                    RoundedCornerShape(14.dp),
+                                )
+                                .clickable { PlayerManager.setPlayOrder(context, order) },
+                            verticalArrangement = Arrangement.Center,
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Text(
+                                text = order.label,
+                                fontSize = 13.sp,
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                color = if (selected) colors.onPrimaryContainer else colors.onSurfaceSecondary,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        item { Spacer(Modifier.height(12.dp)) }
+
         item {
             Column(
                 Modifier
@@ -293,7 +336,7 @@ fun MineScreen(
                 Text("音质", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = colors.onSurface)
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = "无损 / Hi-Res 需要会员权益；拿不到时逐级降级，" +
+                    text = "无损 / Hi-Res 需要会员权益；音质自动降级，" +
                         "下方「当前实际音质」显示真实档位。",
                     fontSize = 12.sp,
                     color = colors.onSurfaceVariantSummary,

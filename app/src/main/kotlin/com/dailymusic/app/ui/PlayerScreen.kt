@@ -62,6 +62,7 @@ import com.dailymusic.app.data.Library
 import com.dailymusic.app.data.LyricLine
 import com.dailymusic.app.data.Lyrics
 import com.dailymusic.app.data.Song
+import com.dailymusic.app.playback.PlayOrder
 import com.dailymusic.app.playback.PlayerManager
 import com.dailymusic.app.playback.SleepTimer
 import kotlinx.coroutines.delay
@@ -553,6 +554,19 @@ private fun BottomTools(
             }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
+            // 播放顺序：三档循环切换，图标跟着变，非「列表循环」时点亮
+            // 这个作用域里的 `context` 是上层传进来的 lambda，不是 Context，另取一个
+            val ctx = LocalContext.current
+            val order = PlayerManager.playOrder
+            ToolIcon(
+                icon = when (order) {
+                    PlayOrder.LIST -> AppIcons.Repeat
+                    PlayOrder.ONE -> AppIcons.RepeatOne
+                    PlayOrder.SHUFFLE -> AppIcons.Shuffle
+                },
+                tint = if (order == PlayOrder.LIST) fg3 else accent,
+            ) { PlayerManager.cyclePlayOrder(ctx) }
+            Spacer(Modifier.width(14.dp))
             ToolIcon(AppIcons.QueueMusic, fg3) { onOpenQueue() }
             Spacer(Modifier.width(14.dp))
             ToolIcon(AppIcons.Clock, if (sleepLabel != null) accent else fg3) { onOpenSleep() }

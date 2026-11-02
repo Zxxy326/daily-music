@@ -14,6 +14,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.ui.res.painterResource
+import com.dailymusic.app.R
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
@@ -148,7 +152,7 @@ fun SettingsScreen(
                     },
                 )
                 SettingDivider()
-                SettingRow(title = "欢迎赞助", onClick = { showDonate = true })
+                SettingRow(title = "请作者喝杯咖啡", onClick = { showDonate = true })
             }
         }
 
@@ -180,7 +184,7 @@ fun SettingsScreen(
     }
 
     if (showDonate) {
-        InfoDialog(title = "欢迎赞助", onDismiss = { showDonate = false }) {
+        InfoDialog(title = "请作者喝杯咖啡", onDismiss = { showDonate = false }) {
             Text(
                 text = "Daily Music 完全免费，没有广告，也没有内购。\n" +
                     "如果它帮你省下了一个会员，或者只是让你听歌时心情好了一点，" +
@@ -189,9 +193,20 @@ fun SettingsScreen(
                 lineHeight = 20.sp,
                 color = MiuixTheme.colorScheme.onSurface,
             )
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(14.dp))
+            // 收款码：微信赞赏码，扫了就能直接打赏，不用跳浏览器
+            Image(
+                painter = painterResource(R.drawable.donate_qr),
+                contentDescription = "赞赏码",
+                modifier = Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .size(196.dp)
+                    .clip(RoundedCornerShape(14.dp)),
+            )
+            Spacer(Modifier.height(6.dp))
             Text(
-                text = "赞助完全自愿，不打赏也不影响任何功能。",
+                text = "微信扫一扫",
+                modifier = Modifier.align(Alignment.CenterHorizontally),
                 fontSize = 11.5.sp,
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
             )
@@ -295,7 +310,7 @@ private fun Credit(name: String, desc: String) {
 private fun InfoDialog(
     title: String,
     onDismiss: () -> Unit,
-    content: @Composable () -> Unit,
+    content: @Composable ColumnScope.() -> Unit,
 ) {
     val colors = MiuixTheme.colorScheme
     Dialog(
