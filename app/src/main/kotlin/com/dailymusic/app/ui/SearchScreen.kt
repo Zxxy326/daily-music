@@ -52,6 +52,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 fun SearchScreen(
     contentPadding: PaddingValues,
     onBack: () -> Unit,
+    onOpenArtist: (String) -> Unit,
     onPlay: (Song, List<Song>) -> Unit,
 ) {
     val colors = MiuixTheme.colorScheme
@@ -247,6 +248,10 @@ fun SearchScreen(
                             else it.albumName.equals(albumName.orEmpty(), true)
                         }?.cover(300),
                         active = onlyKind,
+                        onOpen = {
+                            if (kind == SearchKind.ARTIST) onOpenArtist(artistName.orEmpty())
+                            else onlyKind = !onlyKind
+                        },
                         onToggle = { onlyKind = !onlyKind },
                     )
                 }
@@ -317,6 +322,7 @@ private fun SearchHeaderCard(
     count: Int,
     coverUrl: String?,
     active: Boolean,
+    onOpen: () -> Unit,
     onToggle: () -> Unit,
 ) {
     val colors = MiuixTheme.colorScheme
@@ -327,7 +333,7 @@ private fun SearchHeaderCard(
             .padding(horizontal = 20.dp, vertical = 4.dp)
             .clip(RoundedCornerShape(20.dp))
             .background(colors.surfaceContainer)
-            .clickable(onClick = onToggle)
+            .clickable(onClick = onOpen)
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -371,6 +377,7 @@ private fun SearchHeaderCard(
             modifier = Modifier
                 .clip(RoundedCornerShape(999.dp))
                 .background(if (active) colors.primary else colors.surfaceContainerHigh)
+                .clickable(onClick = onToggle)
                 .padding(horizontal = 14.dp, vertical = 7.dp),
         ) {
             Text(

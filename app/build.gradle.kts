@@ -35,8 +35,9 @@ android {
         // 1.1.0 横屏改版：KTV 两句居中 / 新增精简时钟 / 榜单点不进去。
         // 1.2.0 图标与歌词：小耳机兽图标 / 竖屏歌词 Apple Music 化 / 播放顺序。
         // 1.2.1 歌词换行与显示设置。
-        versionCode = 14
-        versionName = "1.2.1"
+        // 1.2.2 歌手页。
+        versionCode = 15
+        versionName = "1.2.2"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")

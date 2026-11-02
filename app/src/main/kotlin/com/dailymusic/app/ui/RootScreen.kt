@@ -131,6 +131,9 @@ private sealed interface SubPage {
      * 从首页推荐位进来要回首页。写死一个返回值会让其中一条路径跑错地方。
      */
     data class PlaylistDetail(val playlist: PlaylistBrief, val backTo: SubPage? = null) : SubPage
+
+    /** 歌手页：从搜索结果里的歌手卡片进来，返回时回搜索页。 */
+    data class Artist(val name: String, val backTo: SubPage? = null) : SubPage
 }
 
 /**
@@ -333,6 +336,13 @@ fun RootScreen() {
                 val rank = openRank
                 val sub = subPage
                 when {
+                    sub is SubPage.Artist -> ArtistScreen(
+                        name = sub.name,
+                        contentPadding = contentPadding,
+                        onBack = { subPage = sub.backTo },
+                        onPlay = { song, list -> PlayerManager.play(context, song, list) },
+                    )
+
                     sub is SubPage.PlaylistDetail -> PlaylistDetailScreen(
                         playlist = sub.playlist,
                         contentPadding = contentPadding,
@@ -382,6 +392,9 @@ fun RootScreen() {
                         SubPage.Search -> SearchScreen(
                             contentPadding = contentPadding,
                             onBack = { subPage = null },
+                            onOpenArtist = { name ->
+                                subPage = SubPage.Artist(name, SubPage.Search)
+                            },
                             onPlay = { song, list -> PlayerManager.play(context, song, list) },
                         )
                     }
