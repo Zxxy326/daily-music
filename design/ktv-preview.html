@@ -12,44 +12,48 @@
   *{margin:0;padding:0;box-sizing:border-box}
   html,body{width:100%;height:100%;background:#000;overflow:hidden}
   #stage{position:relative;width:100vw;height:100vh;overflow:hidden;
-         font-family:"FangYuan","PingFang SC","Microsoft YaHei",sans-serif}
+         font-family:"FangYuan","PingFang SC","Microsoft YaHei",sans-serif;cursor:pointer}
 
-  /* 封面：模糊衬底 */
+  /* 背景：歌曲的横向封面，模糊压暗 */
   #cover{position:absolute;inset:-6%;width:112%;height:112%;
          background-size:cover;background-position:center;
-         filter:blur(18px) saturate(1.15);transform:scale(1.04)}
+         filter:blur(16px) saturate(1.12);transform:scale(1.04)}
   #veil{position:absolute;inset:0;
-        background:linear-gradient(180deg,rgba(0,0,0,.42) 0%,rgba(0,0,0,.30) 42%,rgba(0,0,0,.66) 100%)}
+        background:linear-gradient(180deg,rgba(0,0,0,.40) 0%,rgba(0,0,0,.26) 40%,rgba(0,0,0,.70) 100%)}
 
-  /* 歌名水印：只描边不填色 */
+  /* 歌名：只描边 + 下面一行歌手 */
+  #titleblock{position:absolute;left:0;right:0;top:14%;text-align:center}
   #title{
-    position:absolute;left:0;right:0;top:44%;transform:translateY(-50%);
-    text-align:center;
-    font-size:16.5vh;font-weight:700;letter-spacing:.04em;
+    font-size:15.5vh;font-weight:700;letter-spacing:.03em;
     color:transparent;
-    -webkit-text-stroke:1.6px rgba(255,255,255,.62);
-    white-space:nowrap;overflow:hidden;
+    -webkit-text-stroke:1.5px rgba(255,255,255,.66);
+    line-height:1;white-space:nowrap;overflow:hidden;
+  }
+  #artist{
+    margin-top:1.8vh;
+    font-size:1.85vh;letter-spacing:.18em;
+    color:rgba(255,255,255,.60);
   }
 
-  /* 歌词：左下，两行，白字黑描边 */
-  #lyrics{
-    position:absolute;left:5.4%;bottom:21%;width:66%;
-    display:flex;flex-direction:column;gap:1.1vh;
-  }
+  /* 两句歌词：左边上一句（高一点），右边下一句（低一点），像台阶 */
   .line{
-    font-size:5.0vh;font-weight:700;line-height:1.3;
+    position:absolute;
+    font-size:4.7vh;font-weight:700;line-height:1.26;
     color:#fff;
     text-shadow:
-      -2px -2px 0 rgba(0,0,0,.9), 2px -2px 0 rgba(0,0,0,.9),
-      -2px 2px 0 rgba(0,0,0,.9), 2px 2px 0 rgba(0,0,0,.9),
-      0 0 2px rgba(0,0,0,.9), 0 6px 16px rgba(0,0,0,.5);
+      -2px -2px 0 rgba(0,0,0,.92), 2px -2px 0 rgba(0,0,0,.92),
+      -2px 2px 0 rgba(0,0,0,.92), 2px 2px 0 rgba(0,0,0,.92),
+      0 0 3px rgba(0,0,0,.9), 0 6px 16px rgba(0,0,0,.5);
   }
-  .line.prev{font-size:3.9vh;font-weight:400;color:rgba(255,255,255,.40);text-shadow:0 2px 10px rgba(0,0,0,.7)}
-  .line .on{color:var(--accent,#6CFFB0)}
+  #l1{left:8.5%;top:63%;width:62%}
+  #l2{left:41%;top:75%;width:54%;color:rgba(255,255,255,.80)}
+  .on{color:var(--accent,#6CFFB0)}
 
-  /* 底部控制条 */
-  .chrome{position:absolute;left:5.4%;right:5.4%;bottom:5.4%;
-          display:flex;align-items:center;gap:2.2vh}
+  /* 底部控制区：5 秒后自动隐藏，点一下唤回 */
+  .chrome{position:absolute;left:5.4%;right:5.4%;bottom:6%;
+          display:flex;align-items:center;gap:2.2vh;
+          transition:opacity .45s ease, transform .45s ease}
+  .chrome.hide{opacity:0;transform:translateY(3vh);pointer-events:none}
   .thumb{width:6.6vh;height:6.6vh;border-radius:1.1vh;object-fit:cover;
          box-shadow:0 6px 18px rgba(0,0,0,.45)}
   .meta{display:flex;flex-direction:column;gap:.5vh;min-width:0}
@@ -58,7 +62,9 @@
   .spacer{flex:1}
   .ctl{display:flex;align-items:center;gap:3.4vh;color:#fff}
   .ctl svg{height:3.4vh;width:auto;display:block}
-  .bar{position:absolute;left:5.4%;right:5.4%;bottom:2.2%;height:2px;background:rgba(255,255,255,.18);border-radius:2px}
+  .bar{position:absolute;left:5.4%;right:5.4%;bottom:2.4%;height:2px;background:rgba(255,255,255,.16);border-radius:2px;
+       transition:opacity .45s ease}
+  .bar.hide{opacity:0}
   .bar i{display:block;height:100%;width:38%;background:#fff;border-radius:2px}
 </style>
 </head>
@@ -66,18 +72,20 @@
 <div id="stage">
   <div id="cover"></div>
   <div id="veil"></div>
-  <div id="title">STAY</div>
 
-  <div id="lyrics">
-    <div class="line prev" id="prev">I do the same thing I told you that I never would</div>
-    <div class="line" id="cur"><span class="on">Lyrics by:</span> Justin Bieber/Charlton Howard/Blake Slatkin/Omer Fedi</div>
+  <div id="titleblock">
+    <div id="title">STAY</div>
+    <div id="artist">THE KID LAROI · JUSTIN BIEBER</div>
   </div>
 
-  <div class="chrome">
+  <div class="line" id="l1"><span class="on">Lyrics by:</span> Justin Bieber/Charlton</div>
+  <div class="line" id="l2">Howard/Blake Slatkin/Omer Fedi</div>
+
+  <div class="chrome" id="chrome">
     <img class="thumb" id="thumb">
     <div class="meta">
       <div class="t" id="song">STAY</div>
-      <div class="a" id="artist">The Kid LAROI, Justin Bieber</div>
+      <div class="a" id="artist2">The Kid LAROI, Justin Bieber</div>
     </div>
     <div class="spacer"></div>
     <div class="ctl">
@@ -87,66 +95,64 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20s-7-4.4-7-9.3A4 4 0 0 1 12 8a4 4 0 0 1 7 2.7C19 15.6 12 20 12 20z"/></svg>
     </div>
   </div>
-  <div class="bar"><i></i></div>
+  <div class="bar" id="bar"><i></i></div>
 </div>
 
 <script>
-/* ---------------- 合成一张「封面」 ---------------- */
-function fakeCover(seed){
-  const c=document.createElement('canvas'); c.width=c.height=600;
+/* ---------------- 封面 ---------------- */
+function fakeCover(){
+  const c=document.createElement('canvas'); c.width=600; c.height=600;
   const x=c.getContext('2d');
-  const palettes=[
-    ['#1b2a4a','#3d5a80','#98c1d9','#ee6c4d'],
-    ['#2b1b2e','#5b2a4e','#c94f7c','#f2b880'],
-    ['#12241f','#2f5d50','#8fbf9f','#e8d5b7'],
-  ];
-  const p=palettes[seed%palettes.length];
   const g=x.createLinearGradient(0,0,600,600);
-  g.addColorStop(0,p[0]); g.addColorStop(.55,p[1]); g.addColorStop(1,p[2]);
+  g.addColorStop(0,'#12161c'); g.addColorStop(.5,'#243040'); g.addColorStop(1,'#3a4a5c');
   x.fillStyle=g; x.fillRect(0,0,600,600);
-  for(let i=0;i<7;i++){
-    const r=120+Math.random()*220;
+  for(let i=0;i<6;i++){
     const rg=x.createRadialGradient(Math.random()*600,Math.random()*600,0,
-                                    Math.random()*600,Math.random()*600,r);
-    rg.addColorStop(0,p[2+ (i%2)]+'cc'); rg.addColorStop(1,'transparent');
+                                    Math.random()*600,Math.random()*600,120+Math.random()*220);
+    rg.addColorStop(0,'rgba(200,190,170,.30)'); rg.addColorStop(1,'transparent');
     x.fillStyle=rg; x.fillRect(0,0,600,600);
   }
-  // 颗粒
   const img=x.getImageData(0,0,600,600), d=img.data;
-  for(let i=0;i<d.length;i+=4){const n=(Math.random()-.5)*26; d[i]+=n; d[i+1]+=n; d[i+2]+=n;}
+  for(let i=0;i<d.length;i+=4){const n=(Math.random()-.5)*20; d[i]+=n; d[i+1]+=n; d[i+2]+=n;}
   x.putImageData(img,0,0);
   return c.toDataURL();
 }
-const coverUrl = fakeCover(0);
-document.getElementById('cover').style.backgroundImage=`url(${coverUrl})`;
-document.getElementById('thumb').src=coverUrl;
+const cover=fakeCover();
+document.getElementById('cover').style.backgroundImage=`url(${cover})`;
+document.getElementById('thumb').src=cover;
 
-/* ---------------- 逐字点亮 ---------------- */
-const cur=document.getElementById('cur');
-const raw=cur.textContent;
-const chars=[...raw];
-cur.textContent='';
-const spans=chars.map(ch=>{
-  const s=document.createElement('span');
-  s.textContent=ch; cur.appendChild(s); return s;
+/* ---------------- 第一句逐字点亮 ---------------- */
+const l1=document.getElementById('l1');
+const raw=l1.textContent;
+l1.textContent='';
+const spans=[...raw].map(ch=>{
+  const s=document.createElement('span'); s.textContent=ch; l1.appendChild(s); return s;
 });
-let played=0, last=0;
-function tick(now){
-  if(!last) last=now;
-  if(now-last>90){
-    last=now;
-    if(played<spans.length){ spans[played].classList.add('on'); played++; }
-    else { spans.forEach(s=>s.classList.remove('on')); played=0; }
-  }
-  requestAnimationFrame(tick);
-}
-requestAnimationFrame(tick);
-
-/* 截图用：?line=N 定格到第 N 个字 */
 const q=new URLSearchParams(location.search);
-if(q.has('line')){
-  const n=+q.get('line');
-  spans.forEach((s,i)=>s.classList.toggle('on', i<n));
+let played=q.has('line')? +q.get('line') : 0;
+function paint(){ spans.forEach((s,i)=>s.classList.toggle('on', i<played)); }
+paint();
+if(!q.has('line')){
+  setInterval(()=>{
+    played++;
+    if(played>spans.length+10) played=0;
+    paint();
+  }, 110);
+}
+
+/* ---------------- 控制区 5 秒自动隐藏 ---------------- */
+const chromeEl=document.getElementById('chrome'), barEl=document.getElementById('bar');
+let hideTimer;
+function showChrome(){
+  chromeEl.classList.remove('hide'); barEl.classList.remove('hide');
+  clearTimeout(hideTimer);
+  hideTimer=setTimeout(()=>{ chromeEl.classList.add('hide'); barEl.classList.add('hide'); },5000);
+}
+if(q.get('chrome')==='1'){
+  chromeEl.classList.remove('hide'); barEl.classList.remove('hide');
+} else {
+  showChrome();
+  document.getElementById('stage').addEventListener('click',showChrome);
 }
 if(q.has('title')) document.getElementById('title').textContent=q.get('title');
 </script>

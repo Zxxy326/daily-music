@@ -11,7 +11,7 @@
   }
   *{margin:0;padding:0;box-sizing:border-box}
   html,body{width:100%;height:100%;background:#05070c;overflow:hidden}
-  #stage{position:relative;width:100vw;height:100vh;overflow:hidden;
+  #stage{cursor:pointer;position:relative;width:100vw;height:100vh;overflow:hidden;
          font-family:"FangYuan","PingFang SC","Microsoft YaHei",sans-serif}
 
   #cover{position:absolute;inset:-8%;width:116%;height:116%;
@@ -48,6 +48,9 @@
   .ctl svg{height:3.5vh;width:auto;display:block}
   .bar{position:absolute;left:5.2%;right:5.2%;bottom:2.6%;height:2px;background:rgba(255,255,255,.14);border-radius:2px}
   .bar i{display:block;height:100%;width:34%;background:rgba(255,255,255,.85);border-radius:2px}
+
+  .chrome.hide,.bar.hide{opacity:0;transform:translateY(3vh);pointer-events:none}
+  .chrome,.bar{transition:opacity .45s ease, transform .45s ease}
 </style>
 </head>
 <body>
@@ -115,6 +118,21 @@ function paint(){
 }
 paint();
 if(!fixed) setInterval(paint,1000);
+
+/* 控制区 5 秒自动隐藏，点一下唤回 */
+(function(){
+  var qs2=new URLSearchParams(location.search);
+  var c=document.querySelector('.chrome'), b=document.querySelector('.bar');
+  if(qs2.get('chrome')==='1'){ return; }
+  var timer;
+  function show(){
+    c.classList.remove('hide'); if(b) b.classList.remove('hide');
+    clearTimeout(timer);
+    timer=setTimeout(function(){ c.classList.add('hide'); if(b) b.classList.add('hide'); },5000);
+  }
+  show();
+  document.getElementById('stage').addEventListener('click',show);
+})();
 </script>
 </body>
 </html>

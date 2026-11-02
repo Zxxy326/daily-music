@@ -11,7 +11,7 @@
   }
   *{margin:0;padding:0;box-sizing:border-box}
   html,body{width:100%;height:100%;background:#04060a;overflow:hidden}
-  #stage{position:relative;width:100vw;height:100vh;overflow:hidden;
+  #stage{cursor:pointer;position:relative;width:100vw;height:100vh;overflow:hidden;
          font-family:"FangYuan","PingFang SC","Microsoft YaHei",sans-serif}
   #bg{position:absolute;inset:-8%;width:116%;height:116%;
       background-size:cover;background-position:center;
@@ -30,6 +30,9 @@
   .spacer{flex:1}
   .ctl{display:flex;align-items:center;gap:3.4vh;color:#fff}
   .ctl svg{height:3.4vh;width:auto;display:block}
+
+  .chrome.hide,.bar.hide{opacity:0;transform:translateY(3vh);pointer-events:none}
+  .chrome,.bar{transition:opacity .45s ease, transform .45s ease}
 </style>
 </head>
 <body>
@@ -55,6 +58,7 @@
 </div>
 
 <script>
+const qs=new URLSearchParams(location.search);
 /* ---------------- 合成封面 ---------------- */
 function fakeCover(){
   const c=document.createElement('canvas'); c.width=c.height=600;
@@ -168,17 +172,34 @@ function stepPhysics(dt){
 const stars=[];
 function seedStars(){
   stars.length=0;
-  for(let i=0;i<220;i++){
+  // 三层：细尘（最多）、中等、少量大的散景光点
+  for(let i=0;i<900;i++){
     stars.push({x:Math.random()*W, y:Math.random()*H,
-                r:Math.random()*1.2+0.2, a:Math.random()*0.5+0.1,
-                v:Math.random()*0.12+0.02});
+                r:Math.random()*0.9+0.15, a:Math.random()*0.45+0.10,
+                v:Math.random()*0.10+0.015});
+  }
+  for(let i=0;i<180;i++){
+    stars.push({x:Math.random()*W, y:Math.random()*H,
+                r:Math.random()*1.8+0.8, a:Math.random()*0.35+0.10,
+                v:Math.random()*0.16+0.03});
+  }
+  for(let i=0;i<26;i++){
+    stars.push({x:Math.random()*W, y:Math.random()*H,
+                r:Math.random()*3.2+1.8, a:Math.random()*0.16+0.05,
+                v:Math.random()*0.22+0.05});
   }
 }
 seedStars();
 
 let t0=performance.now();
+const forceBeat=qs.has('beat')? +qs.get('beat') : -1;
 function frame(now){
   const t=(now-t0)/1000;
+  // 模拟频谱低频包络：每 520ms 一记鼓点，指数衰减。
+  // 真机上这里直接换成 SpectrumTap.bass。
+  const period=520;
+  const ph=(now%period)/period;
+  const beat=forceBeat>=0 ? forceBeat : Math.pow(1-ph,2.4);
   ctx.clearRect(0,0,W,H);
 
   // 星尘：极慢往上飘
@@ -190,8 +211,13 @@ function frame(now){
     ctx.drawImage(sprite, s.x-s.r*4, s.y-s.r*4, s.r*8, s.r*8);
   }
 
-  // 文字粒子
+  // 文字粒子：整组随鼓点往前/往上弹一点
   stepPhysics(1/60);
+  const scl=1+beat*0.055;
+  ctx.save();
+  ctx.translate(W/2, H*0.46 - beat*18);
+  ctx.scale(scl, scl);
+  ctx.translate(-W/2, -H*0.46);
   for(const p of particles){
     // 聚拢之后仍然「活着」：每颗各自一点正弦抖动
     const jx=Math.sin(t*p.sp+p.ph)*1.6;
@@ -204,6 +230,8 @@ function frame(now){
     ctx.drawImage(sprite,
       p.x+jx-p.r*3.0, p.y+jy-p.r*3.0, p.r*6.0, p.r*6.0);
   }
+
+  ctx.restore();
 
   // 整体染成封面色：粒子是白色精灵，叠一层 source-atop 的色块即可，
   // 比每颗粒子各自调色便宜得多。
@@ -231,6 +259,21 @@ if(!q.has('pause')){
     build(LINES[li]);
   }, 4200);
 }
+
+/* 控制区 5 秒自动隐藏，点一下唤回 */
+(function(){
+  var qs2=new URLSearchParams(location.search);
+  var c=document.querySelector('.chrome'), b=document.querySelector('.bar');
+  if(qs2.get('chrome')==='1'){ return; }
+  var timer;
+  function show(){
+    c.classList.remove('hide'); if(b) b.classList.remove('hide');
+    clearTimeout(timer);
+    timer=setTimeout(function(){ c.classList.add('hide'); if(b) b.classList.add('hide'); },5000);
+  }
+  show();
+  document.getElementById('stage').addEventListener('click',show);
+})();
 </script>
 </body>
 </html>
