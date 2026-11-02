@@ -820,7 +820,8 @@ private fun KtvPage(song: Song, lyrics: Lyrics, position: Long) {
             )
         }
 
-        val fs = with(density) { (hPx * 0.047f).toSp() }
+        // 两句歌词的字号：原来 0.047 偏小，调大一级
+        val fs = with(density) { (hPx * 0.055f).toSp() }
         val lineGap = with(density) { (hPx * 0.042f).toDp() }
 
         // 两句一组，成对换页：

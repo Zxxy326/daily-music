@@ -245,7 +245,9 @@ object LyricParser {
                 from++
                 continue
             }
-            if (!isCreditLine(text) && !isTitleLine(text, title, artist) && !isBareTitleLine(text)) break
+            if (!isCreditLine(text) && !isTitleLine(text, title, artist) &&
+                !isBareTitleLine(text) && !isNoticeLine(text)
+            ) break
             from++
         }
         if (from == 0 || lines.size - from < 4) return lines
@@ -288,6 +290,21 @@ object LyricParser {
         "协力", "美术", "摄影", "导演", "剪辑", "后期", "总监", "经理", "助理", "版权",
         "授权", "演唱", "原唱", "翻唱", "词", "曲", "编", "op", "sp",
     )
+
+    /**
+     * 版权声明行，例如「【未经著作权人许可不得翻唱翻录或使用】」。
+     *
+     * 酷狗经常把它塞在名单最前面，不认出来就会当成第一句歌词顶在屏幕上。
+     */
+    private fun isNoticeLine(text: String): Boolean {
+        val t = text.trim()
+        if (t.length > 60) return false
+        val wrapped = (t.startsWith("【") && t.endsWith("】")) ||
+            (t.startsWith("（") && t.endsWith("）")) ||
+            (t.startsWith("(") && t.endsWith(")"))
+        if (wrapped) return true
+        return t.contains("未经") && (t.contains("许可") || t.contains("授权") || t.contains("翻唱"))
+    }
 
     private fun isCreditLine(text: String): Boolean {
         val idx = text.indexOfFirst { it == '：' || it == ':' }

@@ -5,21 +5,31 @@
 
 ## 界面预览
 
+### 竖屏
+
 | 首页 | 播放页 | 歌词页 |
 |---|---|---|
 | <img src="design/screenshots/01-home.png" width="240"> | <img src="design/screenshots/02-player.png" width="240"> | <img src="design/screenshots/03-lyrics.png" width="240"> |
-
-| 动感涟漪 | 简约 | 精简时钟 |
-|---|---|---|
-| <img src="design/screenshots/04-wave.png" width="240"> | <img src="design/screenshots/05-ktv.png" width="240"> | <img src="design/screenshots/06-clock.png" width="240"> |
 
 | 我的 | 设置 |
 |---|---|
 | <img src="design/screenshots/07-mine.png" width="240"> | <img src="design/screenshots/08-settings.png" width="240"> |
 
-> 横屏歌词动效有三套：动感涟漪（封面取色 + 频谱驱动的同心波带）、
-> 简约（描边歌名 + 两句歌词一左一右逐字点亮）、精简时钟（大号时间当背景板）。
-> 左右滑动切换，操作区 5 秒自动隐藏。
+### 横屏歌词动效
+
+左右滑动切换，操作区 5 秒自动隐藏。
+
+**动感涟漪** —— 封面取色，频谱驱动的同心波带
+
+<img src="design/screenshots/04-wave.png" width="680">
+
+**简约** —— 描边歌名，两句歌词一左一右逐字点亮
+
+<img src="design/screenshots/05-ktv.png" width="680">
+
+**精简时钟** —— 模糊封面打底，大号时间当背景板
+
+<img src="design/screenshots/06-clock.png" width="680">
 
 ## 技术栈
 
@@ -32,7 +42,7 @@
 | minSdk | 33 | 玻璃模糊（`miuix-blur`）要求 |
 | Miuix | 0.9.3 | 0.9.4 需要 AGP ≥ 9.1，暂不可用 |
 | 播放内核 | Media3 ExoPlayer 1.4.1 | `MediaSessionService` + `MediaController` |
-| 内嵌服务 | Rust + tiny_http | 复用 md3Music 的酷狗 API 服务 |
+| 内嵌服务 | Rust + tiny_http | 复用 md3Music 的 API 服务 |
 
 ## 构建
 
@@ -70,12 +80,11 @@
 
 | 项目 | 作用 |
 |---|---|
-| [Miuix](https://github.com/miuix-kotlin-multiplatform/miuix) | HyperOS 风格的 Compose 组件库，界面的玻璃、开关、按钮都靠它 |
+| [Miuix](https://github.com/miuix-kotlin-multiplatform/miuix) | HyperOS 风格的 Compose 组件库 |
 | [AndroidX Media3 / ExoPlayer](https://github.com/androidx/media) | 播放内核（`MediaSessionService` + `MediaController`） |
 | [JNA](https://github.com/java-native-access/jna) | 直接调用 Rust 导出的 C 符号，绕开 JNI 包名耦合 |
-| [md3Music](https://github.com/zzyoxml/md3Music) | 上游的 Rust 服务与酷狗接口实现，本项目的接口层与它逐行对齐 |
+| [md3Music](https://github.com/zzyoxml/md3Music) | 上游的 Rust 服务与接口实现 |
 | 阿里妈妈方圆体 | 底栏与歌词动效页的字体，阿里巴巴免费商用字体，本项目按 GB2312 子集化后打包 |
-| 酷狗概念版 | 音源与账号能力（非官方接口，仅供学习研究） |
 
 还有每一个愿意把歌听完的人。
 
@@ -92,5 +101,5 @@ Daily Music 完全免费，没有广告，也没有内购。
 ## 许可证与免责声明
 
 - `rust/kugou_server/` 来自 [md3Music](https://github.com/zzyoxml/md3Music)，**AGPL-3.0**，原始许可证见 `rust/kugou_server/LICENSE-AGPL.txt`。本项目作为其衍生作品，整体按 AGPL-3.0 分发。
-- 项目对接的是**非官方**酷狗接口，涉及的音乐内容版权归原权利人所有。仅供个人学习与自用，**请勿用于商业用途或公开分发**。
+- 项目对接的是**非官方**接口，涉及的音乐内容版权归原权利人所有。仅供个人学习与自用，**请勿用于商业用途或公开分发**。
 - 使用本项目产生的一切后果由使用者自行承担。
