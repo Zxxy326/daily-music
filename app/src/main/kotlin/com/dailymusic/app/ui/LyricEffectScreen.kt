@@ -822,16 +822,12 @@ private fun KtvPage(song: Song, lyrics: Lyrics, position: Long) {
             val tokens = remember(text) { tokenizeLyric(text) }
             val sung = remember(cur, position, tokens) { sungTokens(cur, position, tokens) }
             FlowRow(
-                // 用 offset 而不是 padding：padding 会把 fillMaxWidth 的宽度吃掉，
-                // 右边那句因此被挤成两行。offset 只挪位置、不改可用宽度。
+                // 两句都居中：用户明确「这一句不往左边来」，不再做台阶错位。
                 modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .offset(
-                        x = with(density) { (wPx * 0.085f).toDp() },
-                        y = with(density) { (hPx * 0.60f).toDp() },
-                    )
-                    .fillMaxWidth(0.60f),
-                horizontalArrangement = Arrangement.Start,
+                    .align(Alignment.TopCenter)
+                    .offset(y = with(density) { (hPx * 0.595f).toDp() })
+                    .fillMaxWidth(0.86f),
+                horizontalArrangement = Arrangement.Center,
                 verticalArrangement = Arrangement.Center,
             ) {
                 tokens.forEachIndexed { i, token ->
@@ -855,13 +851,10 @@ private fun KtvPage(song: Song, lyrics: Lyrics, position: Long) {
         next?.text?.takeIf { it.isNotBlank() }?.let { text ->
             FlowRow(
                 modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .offset(
-                        x = with(density) { (wPx * 0.40f).toDp() },
-                        y = with(density) { (hPx * 0.735f).toDp() },
-                    )
-                    .fillMaxWidth(0.56f),
-                horizontalArrangement = Arrangement.Start,
+                    .align(Alignment.TopCenter)
+                    .offset(y = with(density) { (hPx * 0.735f).toDp() })
+                    .fillMaxWidth(0.86f),
+                horizontalArrangement = Arrangement.Center,
                 verticalArrangement = Arrangement.Center,
             ) {
                 OutlinedText(
