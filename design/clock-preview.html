@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>精简时钟 · 效果预览</title>
+<style>
+  @font-face{
+    font-family:"FangYuan";
+    src:url("fonts/alimama_fangyuan.ttf") format("truetype");
+    font-weight:400 700;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:100%;height:100%;background:#05070c;overflow:hidden}
+  #stage{position:relative;width:100vw;height:100vh;overflow:hidden;
+         font-family:"FangYuan","PingFang SC","Microsoft YaHei",sans-serif}
+
+  #cover{position:absolute;inset:-8%;width:116%;height:116%;
+         background-size:cover;background-position:center;
+         filter:blur(26px) saturate(1.25) brightness(.72);transform:scale(1.05)}
+  /* 中间一团偏蓝的辉光，把时间托起来 */
+  #glow{position:absolute;inset:0;
+        background:
+          radial-gradient(ellipse 62% 76% at 50% 44%, rgba(96,150,220,.36) 0%, rgba(40,70,120,.16) 45%, transparent 72%),
+          linear-gradient(180deg, rgba(4,8,16,.55) 0%, rgba(4,8,16,.25) 40%, rgba(4,8,16,.72) 100%)}
+
+  #clock{
+    position:absolute;left:0;right:0;top:50%;transform:translateY(-54%);
+    text-align:center;
+    font-size:26vh;font-weight:700;line-height:1;
+    letter-spacing:-.01em;
+    font-variant-numeric:tabular-nums;
+    color:#fff;
+    text-shadow:0 0 6vh rgba(120,180,255,.28), 0 1.2vh 4vh rgba(0,0,0,.45);
+    white-space:nowrap;
+  }
+  #clock .sep{opacity:.85}
+
+
+  .chrome{position:absolute;left:5.2%;right:5.2%;bottom:6%;
+          display:flex;align-items:center;gap:2.2vh}
+  .thumb{width:6.8vh;height:6.8vh;border-radius:1.2vh;object-fit:cover;
+         box-shadow:0 8px 22px rgba(0,0,0,.5)}
+  .meta{display:flex;flex-direction:column;gap:.55vh;min-width:0}
+  .meta .t{font-size:2.15vh;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .meta .a{font-size:1.7vh;color:rgba(255,255,255,.55);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .spacer{flex:1}
+  .ctl{display:flex;align-items:center;gap:3.6vh;color:#fff}
+  .ctl svg{height:3.5vh;width:auto;display:block}
+  .bar{position:absolute;left:5.2%;right:5.2%;bottom:2.6%;height:2px;background:rgba(255,255,255,.14);border-radius:2px}
+  .bar i{display:block;height:100%;width:34%;background:rgba(255,255,255,.85);border-radius:2px}
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="cover"></div>
+  <div id="glow"></div>
+
+  <div id="clock">00<span class="sep">:</span>25<span class="sep">:</span>00</div>
+
+  <div class="chrome">
+    <img class="thumb" id="thumb">
+    <div class="meta">
+      <div class="t" id="song">Paris in the Rain (HYE SUNG 2024 Edit)</div>
+      <div class="a" id="artist">HYESUNG (혜성)/LAUV</div>
+    </div>
+    <div class="spacer"></div>
+    <div class="ctl">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h2v14H6zM20 5v14l-11-7z"/></svg>
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 5v14l-11-7zM18 5h2v14h-2z"/></svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20s-7-4.4-7-9.3A4 4 0 0 1 12 8a4 4 0 0 1 7 2.7C19 15.6 12 20 12 20z"/></svg>
+    </div>
+  </div>
+  <div class="bar"><i></i></div>
+</div>
+
+<script>
+function fakeCover(seed){
+  const c=document.createElement('canvas'); c.width=c.height=600;
+  const x=c.getContext('2d');
+  const palettes=[
+    ['#0b1622','#173a5e','#5b8fc9','#c9dff5'],
+    ['#1a1030','#3b2a63','#8a6bd1','#e6d9ff'],
+    ['#0f1a14','#22453a','#6fae8c','#dff0e6'],
+  ];
+  const p=palettes[seed%palettes.length];
+  const g=x.createLinearGradient(0,0,600,600);
+  g.addColorStop(0,p[0]); g.addColorStop(.55,p[1]); g.addColorStop(1,p[2]);
+  x.fillStyle=g; x.fillRect(0,0,600,600);
+  for(let i=0;i<6;i++){
+    const rg=x.createRadialGradient(Math.random()*600,Math.random()*600,0,
+                                    Math.random()*600,Math.random()*600,140+Math.random()*220);
+    rg.addColorStop(0,p[3]+'aa'); rg.addColorStop(1,'transparent');
+    x.fillStyle=rg; x.fillRect(0,0,600,600);
+  }
+  const img=x.getImageData(0,0,600,600), d=img.data;
+  for(let i=0;i<d.length;i+=4){const n=(Math.random()-.5)*18; d[i]+=n; d[i+1]+=n; d[i+2]+=n;}
+  x.putImageData(img,0,0);
+  return c.toDataURL();
+}
+const cover=fakeCover(0);
+document.getElementById('cover').style.backgroundImage=`url(${cover})`;
+document.getElementById('thumb').src=cover;
+
+const q=new URLSearchParams(location.search);
+const fixed=q.get('t');
+const clockEl=document.getElementById('clock');
+function pad(n){return String(n).padStart(2,'0')}
+function paint(){
+  const d=new Date();
+  const hh=pad(d.getHours()), mm=pad(d.getMinutes()), ss=pad(d.getSeconds());
+  clockEl.innerHTML = fixed
+    ? fixed.split(':').join('<span class="sep">:</span>')
+    : hh+'<span class="sep">:</span>'+mm+'<span class="sep">:</span>'+ss;
+}
+paint();
+if(!fixed) setInterval(paint,1000);
+</script>
+</body>
+</html>

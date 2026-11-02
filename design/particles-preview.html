@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>动态粒子 · 效果预览</title>
+<style>
+  @font-face{
+    font-family:"FangYuan";
+    src:url("fonts/alimama_fangyuan.ttf") format("truetype");
+    font-weight:400 700;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:100%;height:100%;background:#04060a;overflow:hidden}
+  #stage{position:relative;width:100vw;height:100vh;overflow:hidden;
+         font-family:"FangYuan","PingFang SC","Microsoft YaHei",sans-serif}
+  #bg{position:absolute;inset:-8%;width:116%;height:116%;
+      background-size:cover;background-position:center;
+      filter:blur(30px) saturate(1.1) brightness(.42);transform:scale(1.06)}
+  #veil{position:absolute;inset:0;
+        background:radial-gradient(ellipse 70% 80% at 50% 46%, rgba(0,0,0,.10) 0%, rgba(0,0,0,.52) 78%, rgba(0,0,0,.78) 100%)}
+  canvas{position:absolute;inset:0;width:100%;height:100%}
+
+  .chrome{position:absolute;left:5.2%;right:5.2%;bottom:6%;
+          display:flex;align-items:center;gap:2.2vh;z-index:3}
+  .thumb{width:6.6vh;height:6.6vh;border-radius:1.1vh;object-fit:cover;
+         box-shadow:0 8px 22px rgba(0,0,0,.5)}
+  .meta{display:flex;flex-direction:column;gap:.5vh;min-width:0}
+  .meta .t{font-size:2.1vh;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .meta .a{font-size:1.65vh;color:rgba(255,255,255,.55);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .spacer{flex:1}
+  .ctl{display:flex;align-items:center;gap:3.4vh;color:#fff}
+  .ctl svg{height:3.4vh;width:auto;display:block}
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="bg"></div>
+  <div id="veil"></div>
+  <canvas id="cv"></canvas>
+
+  <div class="chrome">
+    <img class="thumb" id="thumb">
+    <div class="meta">
+      <div class="t" id="song">Paris in the Rain (HYE SUNG 2024 Edit)</div>
+      <div class="a" id="artist">HYESUNG (혜성)/LAUV</div>
+    </div>
+    <div class="spacer"></div>
+    <div class="ctl">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h2v14H6zM20 5v14l-11-7z"/></svg>
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 5v14l-11-7zM18 5h2v14h-2z"/></svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20s-7-4.4-7-9.3A4 4 0 0 1 12 8a4 4 0 0 1 7 2.7C19 15.6 12 20 12 20z"/></svg>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ---------------- 合成封面 ---------------- */
+function fakeCover(){
+  const c=document.createElement('canvas'); c.width=c.height=600;
+  const x=c.getContext('2d');
+  const g=x.createLinearGradient(0,0,600,600);
+  g.addColorStop(0,'#0a1420'); g.addColorStop(.5,'#123049'); g.addColorStop(1,'#2b5f7a');
+  x.fillStyle=g; x.fillRect(0,0,600,600);
+  for(let i=0;i<6;i++){
+    const rg=x.createRadialGradient(Math.random()*600,Math.random()*600,0,
+                                    Math.random()*600,Math.random()*600,150+Math.random()*200);
+    rg.addColorStop(0,'rgba(120,200,255,.55)'); rg.addColorStop(1,'transparent');
+    x.fillStyle=rg; x.fillRect(0,0,600,600);
+  }
+  const img=x.getImageData(0,0,600,600), d=img.data;
+  for(let i=0;i<d.length;i+=4){const n=(Math.random()-.5)*16; d[i]+=n; d[i+1]+=n; d[i+2]+=n;}
+  x.putImageData(img,0,0);
+  return c.toDataURL();
+}
+const cover=fakeCover();
+document.getElementById('bg').style.backgroundImage=`url(${cover})`;
+document.getElementById('thumb').src=cover;
+
+/* ---------------- 粒子 ---------------- */
+const cv=document.getElementById('cv');
+const ctx=cv.getContext('2d');
+let W=0,H=0,DPR=Math.min(2,devicePixelRatio||1);
+
+function resize(){
+  W=cv.clientWidth; H=cv.clientHeight;
+  cv.width=W*DPR; cv.height=H*DPR;
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+resize();
+addEventListener('resize',()=>{resize(); build(currentText);});
+
+/* 光点精灵：预渲染一次，比每帧画 radialGradient 快一个数量级 */
+const sprite=document.createElement('canvas');
+(function(){
+  const S=64; sprite.width=sprite.height=S;
+  const s=sprite.getContext('2d');
+  const g=s.createRadialGradient(S/2,S/2,0,S/2,S/2,S/2);
+  g.addColorStop(0,'rgba(255,255,255,1)');
+  g.addColorStop(.25,'rgba(255,255,255,.85)');
+  g.addColorStop(.55,'rgba(255,255,255,.22)');
+  g.addColorStop(1,'rgba(255,255,255,0)');
+  s.fillStyle=g; s.fillRect(0,0,S,S);
+})();
+
+const ACCENT={r:110,g:190,b:255};   // 封面取色（这里固定成蓝，真实实现从封面取）
+
+let particles=[];
+let currentText='';
+
+function build(text){
+  currentText=text;
+  // 1) 把文字画到离屏 canvas，按像素采样出目标点
+  const off=document.createElement('canvas');
+  off.width=W; off.height=H;
+  const o=off.getContext('2d');
+  let fs=Math.min(H*0.34, (W*0.84)/(text.length*0.62));
+  fs=Math.max(fs, H*0.10);
+  o.font=`700 ${fs}px FangYuan, "PingFang SC", sans-serif`;
+  o.textAlign='center'; o.textBaseline='middle';
+  o.fillStyle='#fff';
+  o.fillText(text, W/2, H*0.46);
+
+  const data=o.getImageData(0,0,off.width,off.height).data;
+  const step=Math.max(3, Math.round(fs/26));     // 字号越大，采样越稀，粒子数保持在几千
+  const targets=[];
+  for(let y=0;y<off.height;y+=step){
+    for(let x=0;x<off.width;x+=step){
+      if(data[(y*off.width+x)*4+3]>140) targets.push([x,y]);
+    }
+  }
+
+  // 2) 粒子数量对齐：多了裁、少了补（补的从随机位置飞过来）
+  const n=targets.length;
+  while(particles.length<n){
+    particles.push({
+      x:W/2+(Math.random()-.5)*W*0.9,
+      y:H/2+(Math.random()-.5)*H*0.9,
+      tx:0,ty:0,vx:0,vy:0,
+      r:0.6+Math.random()*1.5,
+      ph:Math.random()*Math.PI*2,
+      sp:0.6+Math.random()*0.9,
+      a:0.5+Math.random()*0.5,
+    });
+  }
+  particles.length=n;
+  for(let i=0;i<n;i++){
+    particles[i].tx=targets[i][0];
+    particles[i].ty=targets[i][1];
+  }
+  // 直接跑一段物理把粒子「按」到字上：换句的瞬间是飞过去的，
+  // 但截图/首帧不能是一团糊的中间态。
+  for(let k=0;k<180;k++) stepPhysics(1/60);
+}
+
+function stepPhysics(dt){
+  for(const p of particles){
+    const ax=(p.tx-p.x)*0.075;
+    const ay=(p.ty-p.y)*0.075;
+    p.vx=(p.vx+ax)*0.88;
+    p.vy=(p.vy+ay)*0.88;
+    p.x+=p.vx;
+    p.y+=p.vy;
+  }
+}
+
+/* 背景星尘 */
+const stars=[];
+function seedStars(){
+  stars.length=0;
+  for(let i=0;i<220;i++){
+    stars.push({x:Math.random()*W, y:Math.random()*H,
+                r:Math.random()*1.2+0.2, a:Math.random()*0.5+0.1,
+                v:Math.random()*0.12+0.02});
+  }
+}
+seedStars();
+
+let t0=performance.now();
+function frame(now){
+  const t=(now-t0)/1000;
+  ctx.clearRect(0,0,W,H);
+
+  // 星尘：极慢往上飘
+  ctx.globalCompositeOperation='lighter';
+  for(const s of stars){
+    s.y-=s.v;
+    if(s.y<-2){ s.y=H+2; s.x=Math.random()*W; }
+    ctx.globalAlpha=s.a*(0.6+0.4*Math.sin(t*1.5+s.x));
+    ctx.drawImage(sprite, s.x-s.r*4, s.y-s.r*4, s.r*8, s.r*8);
+  }
+
+  // 文字粒子
+  stepPhysics(1/60);
+  for(const p of particles){
+    // 聚拢之后仍然「活着」：每颗各自一点正弦抖动
+    const jx=Math.sin(t*p.sp+p.ph)*1.6;
+    const jy=Math.cos(t*p.sp*1.3+p.ph)*1.6;
+    // 先铺一层大而淡的做辉光，再压一颗实的 —— 比全屏 blur 便宜，效果也够
+    ctx.globalAlpha=p.a*0.16;
+    ctx.drawImage(sprite,
+      p.x+jx-p.r*9, p.y+jy-p.r*9, p.r*18, p.r*18);
+    ctx.globalAlpha=p.a;
+    ctx.drawImage(sprite,
+      p.x+jx-p.r*3.0, p.y+jy-p.r*3.0, p.r*6.0, p.r*6.0);
+  }
+
+  // 整体染成封面色：粒子是白色精灵，叠一层 source-atop 的色块即可，
+  // 比每颗粒子各自调色便宜得多。
+  ctx.globalCompositeOperation='source-atop';
+  ctx.globalAlpha=0.62;
+  ctx.fillStyle=`rgb(${ACCENT.r},${ACCENT.g},${ACCENT.b})`;
+  ctx.fillRect(0,0,W,H);
+
+  ctx.globalCompositeOperation='source-over';
+  ctx.globalAlpha=1;
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* ---------------- 换句 ---------------- */
+const LINES=['you feels like','Paris in the rain','everywhere I go','I keep thinking of you'];
+let li=0;
+const q=new URLSearchParams(location.search);
+document.fonts.load('700 100px FangYuan').catch(()=>{}).finally(()=>{
+  build(q.get('text') || LINES[0]);
+});
+if(!q.has('pause')){
+  setInterval(()=>{
+    li=(li+1)%LINES.length;
+    build(LINES[li]);
+  }, 4200);
+}
+</script>
+</body>
+</html>

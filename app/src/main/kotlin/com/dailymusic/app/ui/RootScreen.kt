@@ -338,6 +338,15 @@ fun RootScreen() {
                         onPlay = { song, list -> PlayerManager.play(context, song, list) },
                     )
 
+                    // 必须排在 sub 之前：从「排行榜列表」里点某一榜，subPage 仍然是
+                    // RankList，先判 sub 会把榜单页重新渲染一遍，看起来就是「点了没反应」。
+                    rank != null -> PlaylistScreen(
+                        rank = rank,
+                        contentPadding = contentPadding,
+                        onBack = { openRank = null },
+                        onPlay = { song, list -> PlayerManager.play(context, song, list) },
+                    )
+
                     sub != null -> when (sub) {
                         SubPage.Daily -> DailyScreen(
                             contentPadding = contentPadding,
@@ -374,13 +383,6 @@ fun RootScreen() {
                             onPlay = { song, list -> PlayerManager.play(context, song, list) },
                         )
                     }
-
-                    rank != null -> PlaylistScreen(
-                        rank = rank,
-                        contentPadding = contentPadding,
-                        onBack = { openRank = null },
-                        onPlay = { song, list -> PlayerManager.play(context, song, list) },
-                    )
 
                     tab == 0 -> HomeScreen(
                         contentPadding = contentPadding,
