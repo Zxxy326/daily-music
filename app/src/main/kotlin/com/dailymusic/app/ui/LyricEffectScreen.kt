@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -55,6 +56,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.input.pointer.pointerInput
@@ -93,13 +97,15 @@ import androidx.compose.ui.graphics.graphicsLayer
  *
  * - **WAVE 动感波光**：模糊封面 + 青蓝罩打底，画 5 条**宽而柔**的光带往外推
  *   （不是细圆环 —— 细环看起来像雷达扫描），歌词后面垫一层放大 2 倍的「幽灵字」。
- * - **KTV 模式**：封面当画面（轻模糊 + 压暗），歌名做成大字水印，歌词贴底逐字扫色。
+ * - **KTV 模式**：封面当画面（模糊 + 压暗），歌名做成描边大字，两句歌词在底部排成台阶。
+ * - **精简时钟**：封面铺满 + 一团辉光，中间一个大号时间，只当背景板用。
  *
  * 逐字扫色复用竖屏歌词页的 [sweepBrush]，两个模式的「唱到哪」永远是同一个基准。
  */
 internal enum class LyricEffect(val label: String) {
     WAVE("WAVE 动感波光"),
     KTV("KTV 模式"),
+    CLOCK("精简时钟"),
 }
 
 @Composable
@@ -343,6 +349,7 @@ private fun EffectPage(
     when (effect) {
         LyricEffect.WAVE -> WavePage(song, lyrics, position)
         LyricEffect.KTV -> KtvPage(song, lyrics, position)
+        LyricEffect.CLOCK -> ClockPage(song, lyrics, position)
     }
 }
 
@@ -739,12 +746,14 @@ private fun DrawScope.drawWaveField(
 // ---------------------------------------------------------------- KTV
 
 /**
- * KTV：封面当画面（轻模糊 + 压暗），歌名做大字水印。
+ * KTV：封面当画面（模糊 + 压暗），歌名做成**描边**大字，下面一行歌手。
  *
- * 歌词是**两句**：上一句靠左靠上、压暗，当前句靠右靠下、逐字点亮。
- * 这样视线自然落在右下角正在唱的那一句上，左上那句只是「刚才唱到哪」的参照。
+ * 歌词两句都贴在底部，像台阶：左边是当前这句（位置高一点、逐字点亮），
+ * 右边是下一句（位置低一点、整体偏灰）。视线从左往右读完这两句，
+ * 等它们唱完，下一组再顶上来。
  *
- * 不把封面彻底模糊掉 —— KTV 的味道就在「看得见画面」，靠一层黑罩保证白字读得出来。
+ * 白字压深色封面必须描边，否则遇到亮背景就糊了 —— 这里用两遍绘制：
+ * 先一遍 `drawStyle = Stroke` 的黑色描边，再压一遍实心白字。
  */
 @Composable
 private fun KtvPage(song: Song, lyrics: Lyrics, position: Long) {
@@ -753,9 +762,10 @@ private fun KtvPage(song: Song, lyrics: Lyrics, position: Long) {
         val hPx = constraints.maxHeight.toFloat()
         val density = LocalDensity.current
 
+        // 背景：歌曲的横向封面
         RemoteImage(
             url = song.cover(640),
-            modifier = Modifier.fillMaxSize().blur(3.dp),
+            modifier = Modifier.fillMaxSize().blur(16.dp),
             shape = RoundedCornerShape(0.dp),
             showFallbackIcon = false,
         )
@@ -763,116 +773,212 @@ private fun KtvPage(song: Song, lyrics: Lyrics, position: Long) {
             Modifier.fillMaxSize().background(
                 Brush.verticalGradient(
                     0f to Color.Black.copy(alpha = 0.50f),
-                    0.45f to Color.Black.copy(alpha = 0.30f),
-                    1f to Color.Black.copy(alpha = 0.72f),
+                    0.40f to Color.Black.copy(alpha = 0.34f),
+                    1f to Color.Black.copy(alpha = 0.74f),
                 ),
             ),
-        )
-
-        // 歌名水印：压在正中偏上一点，别和右下角的当前句打架。
-        Text(
-            text = song.name,
-            modifier = Modifier
-                .align(Alignment.Center)
-                .fillMaxWidth()
-                .padding(horizontal = 30.dp),
-            fontFamily = FangYuanFamily,
-            fontSize = 58.sp,
-            fontWeight = FontWeight.ExtraBold,
-            letterSpacing = 5.sp,
-            color = Color.White.copy(alpha = 0.16f),
-            textAlign = TextAlign.Center,
-            maxLines = 1,
-            overflow = TextOverflow.Clip,
         )
 
         val anchor = lyrics.anchorIndex(position).coerceAtLeast(0)
-        val line = lyrics.lines.getOrNull(anchor)
-        val previous = lyrics.lines.getOrNull(anchor - 1)?.text?.takeIf { it.isNotBlank() }
+        val cur = lyrics.lines.getOrNull(anchor)
+        val next = lyrics.lines.getOrNull(anchor + 1)
 
-        // 上一句：靠左、靠上，压暗一档。
-        if (previous != null) {
-            BasicText(
-                text = previous,
+        // 歌名（只描边）+ 歌手
+        Column(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .padding(top = with(density) { (hPx * 0.14f).toDp() }),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            OutlinedText(
+                text = song.name,
                 style = TextStyle(
                     fontFamily = FangYuanFamily,
-                    fontSize = with(density) { (hPx * 0.050f).toSp() },
-                    lineHeight = with(density) { (hPx * 0.050f * 1.35f).toSp() },
-                    fontWeight = FontWeight.Medium,
-                    color = Color.White.copy(alpha = 0.30f),
+                    fontSize = with(density) { (hPx * 0.155f).toSp() },
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp,
                 ),
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .fillMaxWidth(0.66f)
-                    .padding(
-                        start = with(density) { (wPx * 0.058f).toDp() },
-                        top = with(density) { (hPx * 0.245f).toDp() },
-                    ),
+                color = Color.Transparent,
+                strokeWidth = 3f,
+                strokeColor = Color.White.copy(alpha = 0.72f),
+                maxLines = 1,
+            )
+            Spacer(Modifier.height(with(density) { (hPx * 0.016f).toDp() }))
+            Text(
+                text = song.singer.uppercase(),
+                fontFamily = FangYuanFamily,
+                fontSize = with(density) { (hPx * 0.019f).toSp() },
+                letterSpacing = 2.sp,
+                color = Color.White.copy(alpha = 0.60f),
+                maxLines = 1,
             )
         }
 
-        KtvCurrentLine(line, position, song.name, wPx, hPx)
-    }
-}
+        val fs = with(density) { (hPx * 0.047f).toSp() }
 
-/** 当前句：靠右、靠下，一个字一个字点亮。 */
-@Composable
-private fun BoxScope.KtvCurrentLine(
-    line: LyricLine?,
-    position: Long,
-    fallback: String,
-    wPx: Float,
-    hPx: Float,
-) {
-    val text = line?.text?.takeIf { it.isNotBlank() } ?: fallback
-    val tokens = remember(text) { tokenizeLyric(text) }
-    val sung = remember(line, position, tokens) { sungTokens(line, position, tokens) }
-    val density = LocalDensity.current
+        // 当前句：左、高，逐字点亮
+        cur?.text?.takeIf { it.isNotBlank() }?.let { text ->
+            val tokens = remember(text) { tokenizeLyric(text) }
+            val sung = remember(cur, position, tokens) { sungTokens(cur, position, tokens) }
+            FlowRow(
+                // 用 offset 而不是 padding：padding 会把 fillMaxWidth 的宽度吃掉，
+                // 右边那句因此被挤成两行。offset 只挪位置、不改可用宽度。
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .offset(
+                        x = with(density) { (wPx * 0.085f).toDp() },
+                        y = with(density) { (hPx * 0.60f).toDp() },
+                    )
+                    .fillMaxWidth(0.60f),
+                horizontalArrangement = Arrangement.Start,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                tokens.forEachIndexed { i, token ->
+                    OutlinedText(
+                        text = token,
+                        style = TextStyle(
+                            fontFamily = FangYuanFamily,
+                            fontSize = fs,
+                            lineHeight = fs * 1.26f,
+                            fontWeight = FontWeight.Bold,
+                        ),
+                        color = if (sung[i]) Color.White else Color.White.copy(alpha = 0.55f),
+                        strokeWidth = 5f,
+                        strokeColor = Color.Black.copy(alpha = 0.92f),
+                    )
+                }
+            }
+        }
 
-    val fontSize = remember(text, wPx, hPx) {
-        val chars = text.count { !it.isWhitespace() }.coerceAtLeast(1)
-        val px = minOf(hPx * 0.088f, wPx * 0.74f / (chars * 1.05f))
-        with(density) { px.toSp() }
-    }
-
-    Column(
-        modifier = Modifier
-            .align(Alignment.BottomEnd)
-            .fillMaxWidth(0.76f)
-            .padding(
-                end = with(density) { (wPx * 0.055f).toDp() },
-                bottom = with(density) { (hPx * 0.185f).toDp() },
-            ),
-        horizontalAlignment = Alignment.End,
-    ) {
-        FlowRow(
-            horizontalArrangement = Arrangement.End,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            tokens.forEachIndexed { i, token ->
-                BasicText(
-                    text = token,
+        // 下一句：右、低，整体偏灰
+        next?.text?.takeIf { it.isNotBlank() }?.let { text ->
+            FlowRow(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .offset(
+                        x = with(density) { (wPx * 0.40f).toDp() },
+                        y = with(density) { (hPx * 0.735f).toDp() },
+                    )
+                    .fillMaxWidth(0.56f),
+                horizontalArrangement = Arrangement.Start,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                OutlinedText(
+                    text = text,
                     style = TextStyle(
                         fontFamily = FangYuanFamily,
-                        fontSize = fontSize,
-                        lineHeight = fontSize * 1.3f,
+                        fontSize = fs,
+                        lineHeight = fs * 1.26f,
                         fontWeight = FontWeight.Bold,
-                        color = if (sung[i]) Color.White else Color.White.copy(alpha = 0.34f),
                     ),
+                    color = Color.White.copy(alpha = 0.78f),
+                    strokeWidth = 5f,
+                    strokeColor = Color.Black.copy(alpha = 0.85f),
                 )
             }
         }
-        line?.translation?.takeIf { it.isNotBlank() }?.let { tr ->
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = tr,
-                fontSize = 13.sp,
-                color = Color.White.copy(alpha = 0.62f),
-                textAlign = TextAlign.End,
-                maxLines = 2,
-            )
+    }
+}
+
+/**
+ * 描边字：先画一遍黑色描边，再压一遍填充。
+ *
+ * Compose 没有 CSS 的 `-webkit-text-stroke`，`TextStyle.drawStyle = Stroke(...)`
+ * 只支持单色描边，所以要画两遍。两遍的字号 / 字距完全一致，叠起来才对得齐。
+ */
+@Composable
+private fun OutlinedText(
+    text: String,
+    style: TextStyle,
+    color: Color,
+    strokeWidth: Float,
+    strokeColor: Color,
+    maxLines: Int = Int.MAX_VALUE,
+) {
+    Box {
+        BasicText(
+            text = text,
+            style = style.copy(
+                color = strokeColor,
+                drawStyle = Stroke(width = strokeWidth, join = StrokeJoin.Round, cap = StrokeCap.Round),
+            ),
+            maxLines = maxLines,
+        )
+        BasicText(
+            text = text,
+            style = style.copy(color = color),
+            maxLines = maxLines,
+        )
+    }
+}
+
+// ---------------------------------------------------------------- 时钟
+
+/**
+ * 精简时钟：只有时间和播放条。
+ *
+ * 时间每秒走一次，用「对齐到整秒」的 delay 而不是固定 1000ms ——
+ * 固定 1000ms 会越走越偏，秒数跳变和真实时间对不上。
+ */
+@Composable
+private fun ClockPage(song: Song, lyrics: Lyrics, position: Long) {
+    val palette = rememberCoverPalette(song.cover(640))
+
+    var clock by remember { mutableStateOf(currentClockText()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            clock = currentClockText()
+            delay(1_000L - (System.currentTimeMillis() % 1_000L))
         }
     }
+
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val hPx = constraints.maxHeight.toFloat()
+
+        RemoteImage(
+            url = song.cover(640),
+            modifier = Modifier.fillMaxSize().blur(26.dp),
+            shape = RoundedCornerShape(0.dp),
+            showFallbackIcon = false,
+        )
+        // 压一层暗罩再叠辉光：封面如果是亮色（比如白天外景），
+        // 白字时间会直接糊在背景里，必须先把底压下去。
+        Box(
+            Modifier.fillMaxSize().background(
+                Brush.radialGradient(
+                    0f to palette.glow.copy(alpha = 0.42f),
+                    0.45f to palette.base.copy(alpha = 0.34f),
+                    1f to Color.Black.copy(alpha = 0.62f),
+                ),
+            ),
+        )
+        Box(
+            Modifier.fillMaxSize().background(
+                Brush.verticalGradient(
+                    0f to Color.Black.copy(alpha = 0.34f),
+                    0.45f to Color.Black.copy(alpha = 0.18f),
+                    1f to Color.Black.copy(alpha = 0.44f),
+                ),
+            ),
+        )
+
+        BasicText(
+            text = clock,
+            style = TextStyle(
+                fontFamily = FangYuanFamily,
+                fontSize = with(LocalDensity.current) { (hPx * 0.26f).toSp() },
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                textAlign = TextAlign.Center,
+            ),
+            modifier = Modifier.align(Alignment.Center).fillMaxWidth(),
+        )
+    }
+}
+
+private fun currentClockText(): String {
+    val now = java.util.Calendar.getInstance()
+    fun two(v: Int) = if (v < 10) "0$v" else "$v"
+    return "${two(now.get(java.util.Calendar.HOUR_OF_DAY))}:${two(now.get(java.util.Calendar.MINUTE))}:${two(now.get(java.util.Calendar.SECOND))}"
 }

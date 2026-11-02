@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>音域回响 · 效果预览</title>
+<style>
+  @font-face{
+    font-family:"FangYuan";
+    src:url("fonts/alimama_fangyuan.ttf") format("truetype");
+    font-weight:400 700;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:100%;height:100%;background:#04060a;overflow:hidden}
+  #stage{position:relative;width:100vw;height:100vh;overflow:hidden;cursor:pointer;
+         font-family:"FangYuan","PingFang SC","Microsoft YaHei",sans-serif}
+  #bg{position:absolute;inset:-8%;width:116%;height:116%;
+      background-size:cover;background-position:center;
+      filter:blur(28px) saturate(1.2) brightness(.45);transform:scale(1.05)}
+  #veil{position:absolute;inset:0;
+        background:linear-gradient(180deg,rgba(2,6,12,.72) 0%,rgba(2,6,12,.30) 42%,rgba(2,6,12,.66) 100%)}
+  canvas{position:absolute;inset:0;width:100%;height:100%}
+
+  /* 歌词：压在地平线上方 */
+  #lyric{
+    position:absolute;left:0;right:0;top:19%;
+    text-align:center;
+    font-size:6.6vh;font-weight:700;line-height:1.3;
+    color:#fff;
+    text-shadow:0 0 24px rgba(120,190,255,.45), 0 4px 18px rgba(0,0,0,.6);
+    padding:0 6%;
+  }
+  #lyric .on{color:#8FE3FF}
+  #next{
+    position:absolute;left:0;right:0;top:30%;
+    text-align:center;
+    font-size:3.4vh;font-weight:400;
+    color:rgba(255,255,255,.42);
+    padding:0 10%;
+  }
+
+  .chrome{position:absolute;left:5.2%;right:5.2%;bottom:6%;
+          display:flex;align-items:center;gap:2.2vh;z-index:5;
+          transition:opacity .45s ease, transform .45s ease}
+  .chrome.hide{opacity:0;transform:translateY(3vh);pointer-events:none}
+  .thumb{width:6.6vh;height:6.6vh;border-radius:1.1vh;object-fit:cover;
+         box-shadow:0 8px 22px rgba(0,0,0,.5)}
+  .meta{display:flex;flex-direction:column;gap:.5vh;min-width:0}
+  .meta .t{font-size:2.1vh;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .meta .a{font-size:1.65vh;color:rgba(255,255,255,.55);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .spacer{flex:1}
+  .ctl{display:flex;align-items:center;gap:3.4vh;color:#fff}
+  .ctl svg{height:3.4vh;width:auto;display:block}
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="bg"></div>
+  <div id="veil"></div>
+  <canvas id="cv"></canvas>
+
+  <div id="lyric"><span class="on">I got my head</span> out the sunroof</div>
+  <div id="next">I'm blasting our favorite tunes</div>
+
+  <div class="chrome" id="chrome">
+    <img class="thumb" id="thumb">
+    <div class="meta">
+      <div class="t">Sunroof</div>
+      <div class="a">Nicky Youre, hey daisy</div>
+    </div>
+    <div class="spacer"></div>
+    <div class="ctl">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h2v14H6zM20 5v14l-11-7z"/></svg>
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 5v14l-11-7zM18 5h2v14h-2z"/></svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20s-7-4.4-7-9.3A4 4 0 0 1 12 8a4 4 0 0 1 7 2.7C19 15.6 12 20 12 20z"/></svg>
+    </div>
+  </div>
+</div>
+
+<script>
+const qs=new URLSearchParams(location.search);
+
+/* ---------- 封面 ---------- */
+function fakeCover(){
+  const c=document.createElement('canvas'); c.width=c.height=600;
+  const x=c.getContext('2d');
+  const g=x.createLinearGradient(0,0,600,600);
+  g.addColorStop(0,'#0b1b2c'); g.addColorStop(.5,'#1d4a6b'); g.addColorStop(1,'#2f7fa8');
+  x.fillStyle=g; x.fillRect(0,0,600,600);
+  for(let i=0;i<6;i++){
+    const rg=x.createRadialGradient(Math.random()*600,Math.random()*600,0,
+                                    Math.random()*600,Math.random()*600,140+Math.random()*220);
+    rg.addColorStop(0,'rgba(150,220,255,.42)'); rg.addColorStop(1,'transparent');
+    x.fillStyle=rg; x.fillRect(0,0,600,600);
+  }
+  const img=x.getImageData(0,0,600,600), d=img.data;
+  for(let i=0;i<d.length;i+=4){const n=(Math.random()-.5)*16; d[i]+=n; d[i+1]+=n; d[i+2]+=n;}
+  x.putImageData(img,0,0);
+  return c.toDataURL();
+}
+const cover=fakeCover();
+document.getElementById('bg').style.backgroundImage='url('+cover+')';
+document.getElementById('thumb').src=cover;
+
+/* ---------- 地形 ---------- */
+const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+let W=0,H=0,DPR=Math.min(2,devicePixelRatio||1);
+function resize(){
+  W=cv.clientWidth; H=cv.clientHeight;
+  cv.width=W*DPR; cv.height=H*DPR;
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+resize();
+addEventListener('resize',resize);
+
+const COLS=46, ROWS=22;
+const HORIZON=()=>H*0.46;
+const ACCENT={r:120,g:205,b:255};
+
+// 透视：远排挤在一起、近排铺开
+function project(c,r){
+  const t=r/(ROWS-1);                       // 0 远 → 1 近
+  const zt=Math.pow(t,2.15);
+  const y=HORIZON()+(H*1.08-HORIZON())*zt;
+  const spread=0.05+0.95*Math.pow(t,1.30);
+  const x=W/2+((c/(COLS-1))-0.5)*W*1.02*spread;
+  return {x,y,t};
+}
+
+// 模拟频谱：低频包络 + 一道往外推的涟漪
+function field(c,r,t,time){
+  const period=520;
+  const ph=(performance.now()%period)/period;
+  const beat=Math.pow(1-ph,2.2);
+  const bass=0.35+0.65*beat;
+
+  const ang=(c-COLS/2)/COLS;
+  const wave=Math.sin(c*0.42 + r*0.30 - time*2.2);
+  const ripple=Math.sin(Math.hypot(ang*3.2, (r/ROWS-0.55)*2.4)*7 - time*3.4);
+  // 一点伪随机纹理，免得整片像修剪过的草坪
+  const rnd=0.5+0.5*Math.sin(c*12.9898+r*78.233);
+  const v=0.12 + 0.52*Math.abs(wave) + 0.42*Math.max(0,ripple) + 0.12*rnd;
+  return Math.min(1, v*(0.45+0.75*bass));
+}
+
+let t0=performance.now();
+function frame(now){
+  const time=(now-t0)/1000;
+  ctx.clearRect(0,0,W,H);
+
+  // 地平线附近一层雾，让远排「化」进去
+  const fog=ctx.createLinearGradient(0,HORIZON()-H*0.10,0,HORIZON()+H*0.22);
+  fog.addColorStop(0,'rgba(4,10,18,0)');
+  fog.addColorStop(.45,'rgba(10,26,44,.55)');
+  fog.addColorStop(1,'rgba(4,10,18,0)');
+  ctx.fillStyle=fog; ctx.fillRect(0,HORIZON()-H*0.10,W,H*0.34);
+
+  // 从远到近画柱子（画家算法）
+  for(let r=0;r<ROWS;r++){
+    for(let c=0;c<COLS;c++){
+      const p=project(c,r);
+      const e=field(c,r,p.t,time);
+      const h=H*0.26*e*(0.20+0.80*Math.pow(p.t,1.10));
+      if(h<0.6) continue;
+
+      const wpx=Math.max(1.2, W*0.0072*(0.18+0.82*p.t));
+      const a=0.10+0.55*e;
+      // 柱身
+      ctx.fillStyle='rgba('+ACCENT.r+','+ACCENT.g+','+ACCENT.b+','+(a*0.42).toFixed(3)+')';
+      ctx.fillRect(p.x-wpx/2, p.y-h, wpx, h);
+      // 柱顶
+      ctx.fillStyle='rgba(255,255,255,'+(a*0.75).toFixed(3)+')';
+      ctx.fillRect(p.x-wpx/2, p.y-h, wpx, Math.max(1.2, wpx*0.34));
+    }
+  }
+
+  // 水面反射：地平线处一条淡光
+  const gl=ctx.createLinearGradient(0,HORIZON()-H*0.02,0,HORIZON()+H*0.06);
+  gl.addColorStop(0,'rgba('+ACCENT.r+','+ACCENT.g+','+ACCENT.b+',0)');
+  gl.addColorStop(.5,'rgba('+ACCENT.r+','+ACCENT.g+','+ACCENT.b+',.18)');
+  gl.addColorStop(1,'rgba('+ACCENT.r+','+ACCENT.g+','+ACCENT.b+',0)');
+  ctx.fillStyle=gl; ctx.fillRect(0,HORIZON()-H*0.02,W,H*0.08);
+
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* ---------- 逐字点亮 ---------- */
+const lyr=document.getElementById('lyric');
+const raw=lyr.textContent;
+lyr.textContent='';
+const spans=[...raw].map(ch=>{
+  const s=document.createElement('span'); s.textContent=ch; lyr.appendChild(s); return s;
+});
+let played=qs.has('line')? +qs.get('line') : 0;
+function paint(){ spans.forEach((s,i)=>s.classList.toggle('on', i<played)); }
+paint();
+if(!qs.has('line')) setInterval(()=>{ played++; if(played>spans.length+10) played=0; paint(); },110);
+
+/* ---------- 控制区自动隐藏 ---------- */
+const chromeEl=document.getElementById('chrome');
+if(qs.get('chrome')!=='1'){
+  let timer;
+  const show=()=>{
+    chromeEl.classList.remove('hide');
+    clearTimeout(timer);
+    timer=setTimeout(()=>chromeEl.classList.add('hide'),5000);
+  };
+  show();
+  document.getElementById('stage').addEventListener('click',show);
+}
+</script>
+</body>
+</html>
