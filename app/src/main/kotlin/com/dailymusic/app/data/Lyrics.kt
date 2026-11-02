@@ -101,7 +101,18 @@ object LyricParser {
      * @param raw   /lyric 接口返回的 decodeContent
      * @param isKrc true = 逐字（fmt=krc），false = 普通 LRC
      */
-    fun parse(raw: String, isKrc: Boolean = true): Lyrics {
+    /**
+     * @param fallbackTitle  /  @param fallbackArtist
+     * 酷狗很多 KRC 没有 `[ti:]` / `[ar:]`，只有「歌名 - 歌手」这一行。
+     * 拿不到 meta 时用调用方传进来的歌曲信息兜底，否则标题行认不出来，
+     * 后面的连续裁剪第一步就断掉，整片制作名单全留下。
+     */
+    fun parse(
+        raw: String,
+        isKrc: Boolean = true,
+        fallbackTitle: String = "",
+        fallbackArtist: String = "",
+    ): Lyrics {
         if (raw.isBlank()) return Lyrics.Empty
 
         val meta = HashMap<String, String>()
@@ -190,7 +201,11 @@ object LyricParser {
         }
 
         return Lyrics(
-            lines = dropLeadingCredits(fixed, meta["ti"].orEmpty(), meta["ar"].orEmpty()),
+            lines = dropLeadingCredits(
+                fixed,
+                meta["ti"].orEmpty().ifBlank { fallbackTitle },
+                meta["ar"].orEmpty().ifBlank { fallbackArtist },
+            ),
             title = meta["ti"].orEmpty(),
             artist = meta["ar"].orEmpty(),
             album = meta["al"].orEmpty(),
@@ -245,7 +260,10 @@ object LyricParser {
     private fun isBareTitleLine(text: String): Boolean {
         val t = text.trim()
         if (t.length > 40) return false
-        val parts = t.split(" - ", " -", "- ").map { it.trim() }.filter { it.isNotEmpty() }
+        // 常见三种写法都要认：「歌名 - 歌手」「歌名-歌手」「歌名－歌手」
+        val parts = t.split(" - ", " -", "- ", "-", "－")
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
         return parts.size == 2 && parts.all { it.length in 1..24 }
     }
 

@@ -9,16 +9,16 @@
 |---|---|---|
 | <img src="design/screenshots/01-home.png" width="240"> | <img src="design/screenshots/02-player.png" width="240"> | <img src="design/screenshots/03-lyrics.png" width="240"> |
 
-| WAVE 动感波光 | KTV 模式 | 精简时钟 |
+| 动感涟漪 | 简约 | 精简时钟 |
 |---|---|---|
 | <img src="design/screenshots/04-wave.png" width="240"> | <img src="design/screenshots/05-ktv.png" width="240"> | <img src="design/screenshots/06-clock.png" width="240"> |
 
-| 我的 | 设置 | 请作者喝杯咖啡 |
-|---|---|---|
-| <img src="design/screenshots/07-mine.png" width="240"> | <img src="design/screenshots/08-settings.png" width="240"> | <img src="design/screenshots/09-donate.png" width="240"> |
+| 我的 | 设置 |
+|---|---|
+| <img src="design/screenshots/07-mine.png" width="240"> | <img src="design/screenshots/08-settings.png" width="240"> |
 
-> 横屏歌词动效有三套：WAVE 动感波光（封面取色 + 频谱驱动的同心波带）、
-> KTV 模式（描边歌名 + 两句歌词逐字点亮）、精简时钟（大号时间当背景板）。
+> 横屏歌词动效有三套：动感涟漪（封面取色 + 频谱驱动的同心波带）、
+> 简约（描边歌名 + 两句歌词一左一右逐字点亮）、精简时钟（大号时间当背景板）。
 > 左右滑动切换，操作区 5 秒自动隐藏。
 
 ## 技术栈

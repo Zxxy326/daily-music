@@ -120,6 +120,8 @@ internal val LyricUnsung = Color.White.copy(alpha = 0.45f)
  */
 @Composable
 fun PlayerScreen(onClose: () -> Unit, onOpenLyrics: () -> Unit) {
+    // 播放页是深色封面底，状态栏图标必须切白
+    SystemBarIcons(light = false)
     val context = LocalContext.current
     val song = PlayerManager.current ?: return
     val dark = isSystemInDarkTheme()
@@ -616,6 +618,8 @@ private fun ToolIcon(
  */
 @Composable
 fun LyricsScreen(onClose: () -> Unit) {
+    // 歌词页整屏深色，同样要白图标
+    SystemBarIcons(light = false)
     val context = LocalContext.current
     val song = PlayerManager.current ?: return
     val lyrics = PlayerManager.lyrics
@@ -773,8 +777,27 @@ fun LyricsScreen(onClose: () -> Unit) {
             }
             }
 
-            // 歌词区：占满剩余高度，两侧 34dp 内边距
-            Box(Modifier.fillMaxWidth().weight(1f).padding(horizontal = 34.dp)) {
+            // 歌词区：占满剩余高度，两侧 34dp 内边距。
+            // 沉浸（chrome 隐藏）时底部控制区整块消失，歌词会一直排到手势条跟前 ——
+            // 这里补一段会跟着过渡的底边距，保证任何状态下最后一行都不贴边。
+            val lyricBottomGap by animateDpAsState(
+                targetValue = if (chromeVisible) 0.dp else 28.dp,
+                animationSpec = tween(260),
+                label = "lyric-bottom-gap",
+            )
+            // 顶部同理：顶栏收起后歌词会顶到状态栏下面，留一口气
+            val lyricTopGap by animateDpAsState(
+                targetValue = if (chromeVisible) 0.dp else 16.dp,
+                animationSpec = tween(260),
+                label = "lyric-top-gap",
+            )
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .padding(horizontal = 34.dp)
+                    .padding(top = lyricTopGap, bottom = lyricBottomGap),
+            ) {
                 when {
                     PlayerManager.lyricsLoading -> CenterHint("歌词加载中…")
                     lyrics.isEmpty -> CenterHint("这首歌没有歌词")

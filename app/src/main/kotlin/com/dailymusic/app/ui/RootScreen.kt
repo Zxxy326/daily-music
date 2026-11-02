@@ -148,6 +148,8 @@ private sealed interface SubPage {
 @Composable
 fun RootScreen() {
     val context = LocalContext.current
+    // 主页是浅色底 → 状态栏图标用深色；系统深色主题下反过来
+    SystemBarIcons(light = !isSystemInDarkTheme())
     val backdrop = rememberLayerBackdrop()
     val wc = windowClass()
     val wide = wc != WindowClass.Compact
@@ -453,8 +455,14 @@ fun RootScreen() {
                     .align(Alignment.CenterStart)
                     .padding(start = 14.dp, top = 20.dp, bottom = 20.dp),
                 onSelect = {
+                    // 切 tab 必须顺手清掉二级页 / 榜单页：内容区是按
+                    // `sub != null` → `rank != null` → `tab` 的顺序判断的，
+                    // 只改 tab 的话，从「排行榜」里点「我的」还是渲染那个子页，
+                    // 表现就是「点了没反应」（中间的播放条不受影响，所以能跳）。
                     tab = it
                     minePage = -1
+                    subPage = null
+                    openRank = null
                 },
             )
             current?.let { song ->
@@ -509,6 +517,8 @@ fun RootScreen() {
                             onSelect = {
                                 tab = it
                                 minePage = -1
+                                subPage = null
+                                openRank = null
                                 wakeBar()
                             },
                             song = current,

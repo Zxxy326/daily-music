@@ -5,6 +5,10 @@ import android.view.WindowManager
 import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -70,6 +74,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -95,16 +100,16 @@ import androidx.compose.ui.graphics.graphicsLayer
  *
  * 两个效果都是纯 Compose 绘制，没有视频素材：
  *
- * - **WAVE 动感波光**：模糊封面 + 青蓝罩打底，画 5 条**宽而柔**的光带往外推
+ * - **动感涟漪**：模糊封面 + 青蓝罩打底，画 5 条**宽而柔**的光带往外推
  *   （不是细圆环 —— 细环看起来像雷达扫描），歌词后面垫一层放大 2 倍的「幽灵字」。
- * - **KTV 模式**：封面当画面（模糊 + 压暗），歌名做成描边大字，两句歌词在底部排成台阶。
+ * - **简约**：封面当画面（模糊 + 压暗），歌名做成描边大字，两句歌词在底部排成台阶。
  * - **精简时钟**：封面铺满 + 一团辉光，中间一个大号时间，只当背景板用。
  *
  * 逐字扫色复用竖屏歌词页的 [sweepBrush]，两个模式的「唱到哪」永远是同一个基准。
  */
 internal enum class LyricEffect(val label: String) {
-    WAVE("WAVE 动感波光"),
-    KTV("KTV 模式"),
+    WAVE("动感涟漪"),
+    KTV("简约"),
     CLOCK("精简时钟"),
 }
 
@@ -780,8 +785,8 @@ private fun KtvPage(song: Song, lyrics: Lyrics, position: Long) {
         )
 
         val anchor = lyrics.anchorIndex(position).coerceAtLeast(0)
-        val cur = lyrics.lines.getOrNull(anchor)
-        val next = lyrics.lines.getOrNull(anchor + 1)
+        // 按「两句一组」取整：anchor 落在组内第 1 句或第 2 句时都还是同一组
+        val pairStart = (anchor / 2) * 2
 
         // 歌名（只描边）+ 歌手
         Column(
@@ -816,60 +821,79 @@ private fun KtvPage(song: Song, lyrics: Lyrics, position: Long) {
         }
 
         val fs = with(density) { (hPx * 0.047f).toSp() }
+        val lineGap = with(density) { (hPx * 0.042f).toDp() }
 
-        // 当前句：左、高，逐字点亮
-        cur?.text?.takeIf { it.isNotBlank() }?.let { text ->
-            val tokens = remember(text) { tokenizeLyric(text) }
-            val sung = remember(cur, position, tokens) { sungTokens(cur, position, tokens) }
-            FlowRow(
-                // 两句都居中：用户明确「这一句不往左边来」，不再做台阶错位。
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .offset(y = with(density) { (hPx * 0.595f).toDp() })
-                    .fillMaxWidth(0.86f),
-                horizontalArrangement = Arrangement.Center,
-                verticalArrangement = Arrangement.Center,
-            ) {
-                tokens.forEachIndexed { i, token ->
-                    OutlinedText(
-                        text = token,
-                        style = TextStyle(
-                            fontFamily = FangYuanFamily,
-                            fontSize = fs,
-                            lineHeight = fs * 1.26f,
-                            fontWeight = FontWeight.Bold,
-                        ),
-                        color = if (sung[i]) Color.White else Color.White.copy(alpha = 0.55f),
-                        strokeWidth = 5f,
-                        strokeColor = Color.Black.copy(alpha = 0.92f),
-                    )
-                }
-            }
-        }
-
-        // 下一句：右、低，整体偏灰
-        next?.text?.takeIf { it.isNotBlank() }?.let { text ->
-            FlowRow(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .offset(y = with(density) { (hPx * 0.735f).toDp() })
-                    .fillMaxWidth(0.86f),
-                horizontalArrangement = Arrangement.Center,
-                verticalArrangement = Arrangement.Center,
-            ) {
-                OutlinedText(
-                    text = text,
-                    style = TextStyle(
-                        fontFamily = FangYuanFamily,
-                        fontSize = fs,
-                        lineHeight = fs * 1.26f,
-                        fontWeight = FontWeight.Bold,
-                    ),
-                    color = Color.White.copy(alpha = 0.78f),
-                    strokeWidth = 5f,
-                    strokeColor = Color.Black.copy(alpha = 0.85f),
+        // 两句一组，成对换页：
+        // 第一句唱完，第二句**留在原位**接着点亮（不往上跳），
+        // 两句都唱完了，才把这一组换掉、顶出下面两句。
+        // 所以这里按「对」取整（pairStart 只会是 0/2/4…），而不是按当前行。
+        AnimatedContent(
+            targetState = pairStart,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth(0.85f)
+                .offset(y = with(density) { (hPx * 0.585f).toDp() }),
+            transitionSpec = {
+                (fadeIn(tween(420)) + slideInVertically(tween(420)) { it / 5 }) togetherWith
+                    (fadeOut(tween(280)) + slideOutVertically(tween(280)) { -it / 5 })
+            },
+            label = "ktv-pair",
+        ) { start ->
+            Column(Modifier.fillMaxWidth()) {
+                // 第一句居左
+                KtvLyricLine(
+                    line = lyrics.lines.getOrNull(start),
+                    position = position,
+                    fontSize = fs,
+                    alignEnd = false,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(lineGap))
+                // 第二句居右
+                KtvLyricLine(
+                    line = lyrics.lines.getOrNull(start + 1),
+                    position = position,
+                    fontSize = fs,
+                    alignEnd = true,
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
+        }
+    }
+}
+
+/** 简约模式的一行歌词：逐字点亮 + 黑描边，按 [alignEnd] 决定贴左还是贴右。 */
+@Composable
+private fun KtvLyricLine(
+    line: LyricLine?,
+    position: Long,
+    fontSize: TextUnit,
+    alignEnd: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val text = line?.text.orEmpty()
+    if (text.isBlank()) return
+    val tokens = remember(text) { tokenizeLyric(text) }
+    val sung = remember(line, position, tokens) { sungTokens(line, position, tokens) }
+
+    FlowRow(
+        modifier = modifier,
+        horizontalArrangement = if (alignEnd) Arrangement.End else Arrangement.Start,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        tokens.forEachIndexed { i, token ->
+            OutlinedText(
+                text = token,
+                style = TextStyle(
+                    fontFamily = FangYuanFamily,
+                    fontSize = fontSize,
+                    lineHeight = fontSize * 1.26f,
+                    fontWeight = FontWeight.Bold,
+                ),
+                color = if (sung[i]) Color.White else Color.White.copy(alpha = 0.55f),
+                strokeWidth = 5f,
+                strokeColor = Color.Black.copy(alpha = 0.90f),
+            )
         }
     }
 }

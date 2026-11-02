@@ -349,7 +349,12 @@ object KugouApi {
         val content = body.str("decodeContent").ifBlank { body.str("content") }
         if (content.isBlank()) return Lyrics.Empty
 
-        val parsed = LyricParser.parse(content, isKrc = krcAvailable)
+        val parsed = LyricParser.parse(
+            content,
+            isKrc = krcAvailable,
+            fallbackTitle = song.name,
+            fallbackArtist = song.singer,
+        )
         if (!parsed.isEmpty) lyricCache[song.key] = parsed
         return parsed
     }

@@ -17,6 +17,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.core.view.WindowCompat
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.runtime.DisposableEffect
+import androidx.activity.compose.LocalActivity
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -291,6 +295,33 @@ fun SongRow(
                     size = 19.dp,
                 )
             }
+        }
+    }
+}
+
+/**
+ * 状态栏 / 导航栏图标的明暗。
+ *
+ * 页面是深色（播放页、歌词页）时必须把图标切成白色，否则系统按「浅色主题」
+ * 画出来的黑色图标会直接消失在深色背景里 —— 这就是「沉浸以后没适配」的一半。
+ *
+ * 用 DisposableEffect 记录并还原上一个值：播放页/歌词页是盖在主页之上的，
+ * 退出时要把控制权还给下面的页面。
+ */
+@Composable
+fun SystemBarIcons(light: Boolean) {
+    val activity = LocalActivity.current ?: return
+    val view = LocalView.current
+    DisposableEffect(light, activity) {
+        val window = activity.window
+        val controller = WindowCompat.getInsetsController(window, view)
+        val prevStatus = controller.isAppearanceLightStatusBars
+        val prevNav = controller.isAppearanceLightNavigationBars
+        controller.isAppearanceLightStatusBars = light
+        controller.isAppearanceLightNavigationBars = light
+        onDispose {
+            controller.isAppearanceLightStatusBars = prevStatus
+            controller.isAppearanceLightNavigationBars = prevNav
         }
     }
 }

@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -77,7 +78,8 @@ fun LoginScreen(onBack: () -> Unit, onLoggedIn: () -> Unit) {
     val colors = MiuixTheme.colorScheme
     var mode by rememberSaveable { mutableStateOf(LoginMode.Qr) }
 
-    Column(Modifier.fillMaxSize()) {
+    // 手势条：登录页是整屏表单，底部按钮/二维码会顶到小白条上
+    Column(Modifier.fillMaxSize().navigationBarsPadding()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
