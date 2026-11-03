@@ -50,6 +50,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.foundation.text.BasicText
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
@@ -69,6 +72,7 @@ import androidx.compose.ui.unit.sp
 import com.dailymusic.app.data.Auth
 import com.dailymusic.app.data.FavoriteCloud
 import com.dailymusic.app.data.Library
+import com.dailymusic.app.data.LyricLine
 import com.dailymusic.app.data.PlaylistBrief
 import com.dailymusic.app.data.Profile
 import com.dailymusic.app.data.Rank
@@ -109,6 +113,8 @@ private data class Tab(val label: String, val icon: ImageVector)
 // 底栏中间让给播放条。
 private val Tabs = listOf(
     Tab("首页", AppIcons.Home),
+    Tab("搜索", AppIcons.Search),
+    Tab("音乐库", AppIcons.Library),
     Tab("我的", AppIcons.Person),
 )
 
@@ -209,7 +215,7 @@ fun RootScreen() {
     // 而不是一路跳回首页。
     BackHandler(
         enabled = lyricsOpen || playerOpen || openRank != null || subPage != null ||
-            minePage >= 0 || tab == 1,
+            minePage >= 0 || tab != 0,
     ) {
         when {
             lyricsOpen -> lyricsOpen = false
@@ -217,8 +223,8 @@ fun RootScreen() {
             openRank != null -> openRank = null
             subPage != null -> subPage = null
             minePage >= 0 -> minePage = -1
-            // 在「我的」页按返回：先回首页，而不是直接把 App 退到桌面。
-            // 底栏只有两个 tab，用户很容易把「返回」当成「回上一屏」。
+            // 在任何非首页 tab 按返回：先回首页，而不是直接把 App 退到桌面。
+            // 用户很容易把「返回」当成「回上一屏」。
             else -> tab = 0
         }
     }
@@ -323,12 +329,9 @@ fun RootScreen() {
                             if (abs(dx) < threshold || abs(dx) < abs(dy) * 1.5f) {
                                 return@awaitEachGesture
                             }
-                            // 左滑去「我的」，右滑回「首页」。
-                            if (dx < 0) {
-                                tab = 1
-                            } else {
-                                tab = 0
-                            }
+                            // 左滑下一项、右滑上一项
+                            tab = if (dx < 0) (tab + 1).coerceAtMost(Tabs.lastIndex)
+                            else (tab - 1).coerceAtLeast(0)
                             minePage = -1
                         }
                     },
@@ -411,9 +414,24 @@ fun RootScreen() {
                         onOpenPlaylist = { subPage = SubPage.PlaylistDetail(it) },
                         // 头像 = 「我的」入口，和底栏右侧那颗是同一个落点。
                         onOpenMine = {
-                            tab = 1
+                            tab = 3
                             minePage = -1
                         },
+                    )
+
+                    tab == 1 -> SearchScreen(
+                        contentPadding = contentPadding,
+                        // 一级页没有返回键
+                        onBack = null,
+                        onOpenArtist = { name -> subPage = SubPage.Artist(name, null) },
+                        onPlay = { song, list -> PlayerManager.play(context, song, list) },
+                    )
+
+                    tab == 2 -> LibraryScreen(
+                        contentPadding = contentPadding,
+                        initialTab = 0,
+                        onBack = null,
+                        onPlay = { song, list -> PlayerManager.play(context, song, list) },
                     )
 
                     else -> when (minePage) {
@@ -479,7 +497,7 @@ fun RootScreen() {
                 },
             )
             current?.let { song ->
-                MiniPlayer(
+                WideMiniPlayer(
                     backdrop = backdrop,
                     song = song,
                     isPlaying = PlayerManager.isPlaying,
@@ -901,10 +919,11 @@ private fun GlassNavBar(
                 onOpenPlayer = onOpenPlayer,
                 modifier = Modifier.weight(1f).fillMaxHeight(),
             )
+            // 竖屏底栏只有首页 / 我的两项，所以直接取 Tabs[3]（搜索、音乐库是宽屏才有的）
             GlassTab(
-                tab = Tabs[1],
-                selected = selected == 1,
-                onClick = { onSelect(1) },
+                tab = Tabs[3],
+                selected = selected == 3,
+                onClick = { onSelect(3) },
                 modifier = Modifier.size(44.dp),
             )
         }
@@ -921,7 +940,8 @@ private fun GlassRail(
     onSelect: (Int) -> Unit,
 ) {
     val dark = isSystemInDarkTheme()
-    val shape = RoundedCornerShape(34.dp)
+    // 与底部播放条统一：24
+    val shape = RoundedCornerShape(24.dp)
 
     Column(
         modifier = modifier
@@ -965,18 +985,19 @@ private fun RailTab(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .height(72.dp)
-            .clip(RoundedCornerShape(24.dp))
+            // 横屏可用高度只有 320dp 上下：4 项 * 72 会顶出屏幕，收到 58
+            .height(58.dp)
+            .clip(RoundedCornerShape(20.dp))
             .background(colors.primary.copy(alpha = 0.13f * progress))
             .clickable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        TintedIcon(tab.icon, tint, 22.dp)
-        Spacer(Modifier.height(4.dp))
+        TintedIcon(tab.icon, tint, 20.dp)
+        Spacer(Modifier.height(3.dp))
         Text(
             text = tab.label,
-            fontSize = 11.sp,
+            fontSize = 10.5.sp,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
             color = tint,
         )
@@ -1113,4 +1134,202 @@ private fun MiniPlayer(
             }
         }
     }
+}
+
+
+/**
+ * 宽屏（平板横屏）底部播放条。
+ *
+ * 比竖屏那条信息量大得多：圆形旋转封面 + 逐字歌词轮播 + 上一首/下一首/收藏。
+ * 进度条去掉了 —— 这一条是「控制台」，看进度去播放页。
+ *
+ * 歌词进度直接读 [sweepBrush]，和竖屏歌词页、横屏动效共用同一套
+ * [sweepFraction]，不会出现「底栏唱到第三个字、歌词页已经第五个字」。
+ */
+@Composable
+private fun WideMiniPlayer(
+    backdrop: LayerBackdrop,
+    song: Song,
+    isPlaying: Boolean,
+    onOpen: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val context = LocalContext.current
+    val dark = isSystemInDarkTheme()
+    val colors = MiuixTheme.colorScheme
+    val shape = RoundedCornerShape(24.dp)
+
+    // 播放时像黑胶一样慢慢转，暂停停在当前角度（和竖屏底栏同一套做法）
+    val spin = remember { Animatable(0f) }
+    LaunchedEffect(isPlaying) {
+        if (!isPlaying) return@LaunchedEffect
+        while (true) {
+            spin.animateTo(spin.value + 360f, tween(18_000, easing = LinearEasing))
+            spin.snapTo(spin.value % 360f)
+        }
+    }
+
+    val lyrics = PlayerManager.lyrics
+    val position = PlayerManager.positionMs
+    val anchor = if (lyrics.isEmpty) -1 else lyrics.anchorIndex(position).coerceAtLeast(0)
+    val line = lyrics.lines.getOrNull(anchor)
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .padding(bottom = 14.dp)
+            .height(76.dp)
+            .shadow(
+                elevation = 16.dp,
+                shape = shape,
+                clip = false,
+                ambientColor = Color.Black.copy(alpha = 0.16f),
+                spotColor = Color.Black.copy(alpha = 0.16f),
+            )
+            .clip(shape)
+            .liquidGlass(backdrop = backdrop, shape = shape, blurRadius = 26.dp)
+            .background(glassTint(dark), shape)
+            .border(1.dp, glassBorder(dark), shape)
+            .clickable(onClick = onOpen),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxSize().padding(horizontal = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            RemoteImage(
+                url = song.cover(160),
+                modifier = Modifier.size(52.dp).graphicsLayer { rotationZ = spin.value },
+                shape = CircleShape,
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.width(150.dp), verticalArrangement = Arrangement.Center) {
+                Text(
+                    text = song.name,
+                    fontSize = 13.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = colors.onSurface,
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = song.singer,
+                    fontSize = 10.5.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = colors.onSurfaceSecondary,
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Box(
+                Modifier
+                    .width(1.dp)
+                    .height(34.dp)
+                    .background(colors.onSurface.copy(alpha = 0.10f)),
+            )
+            Spacer(Modifier.width(14.dp))
+
+            // 歌词：一句一换，唱过的字走主题色
+            Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                AnimatedContent(
+                    targetState = line?.text.orEmpty(),
+                    transitionSpec = { fadeIn(tween(280)) togetherWith fadeOut(tween(160)) },
+                    label = "wide-mini-lyric",
+                ) { text ->
+                    if (text.isBlank()) {
+                        Text(
+                            text = "纯音乐，请欣赏",
+                            fontSize = 15.sp,
+                            color = colors.onSurfaceSecondary,
+                        )
+                    } else {
+                        BasicText(
+                            text = text,
+                            style = TextStyle(
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                // 注意不能用 sweepBrush：那套是给深色歌词页的（白色字），
+                                // 画在浅色玻璃上等于看不见。这里按浅色底重新配一组颜色。
+                                brush = if (line != null) {
+                                    miniSweepBrush(
+                                        line = line,
+                                        position = position,
+                                        sung = colors.primary,
+                                        dim = colors.onSurfaceSecondary,
+                                    )
+                                } else {
+                                    SolidColor(colors.onSurfaceSecondary)
+                                },
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.width(12.dp))
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                WideCtl(AppIcons.SkipPrevious, colors.onSurface) { PlayerManager.previous() }
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .background(colors.onSurface)
+                        .clickable { PlayerManager.toggle(context) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    TintedIcon(
+                        icon = if (isPlaying) AppIcons.Pause else AppIcons.Play,
+                        tint = colors.surface,
+                        size = 20.dp,
+                    )
+                }
+                WideCtl(AppIcons.SkipNext, colors.onSurface) { PlayerManager.next() }
+                val fav = Library.isFavorite(song.key)
+                WideCtl(
+                    icon = if (fav) AppIcons.Heart else AppIcons.HeartOutline,
+                    tint = if (fav) Color(0xFFF0455E) else colors.onSurface,
+                ) { Library.toggleFavorite(song) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WideCtl(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    tint: Color,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        TintedIcon(icon, tint, 20.dp)
+    }
+}
+
+
+/** 浅色底上的逐字扫色：唱过 = 主题色，未唱 = 次要文字色，中间一段软过渡。 */
+private fun miniSweepBrush(
+    line: LyricLine,
+    position: Long,
+    sung: Color,
+    dim: Color,
+): Brush {
+    val p = sweepFraction(line, position).coerceIn(0f, 1f)
+    val lead = 0.045f
+    val a = (p - lead).coerceIn(0f, 1f)
+    val b = (p + lead * 0.4f).coerceIn(0f, 1f)
+    return Brush.horizontalGradient(
+        0f to sung,
+        a to sung,
+        b to dim,
+        1f to dim,
+    )
 }

@@ -31,6 +31,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -41,6 +42,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.dailymusic.app.data.KugouApi
+import com.dailymusic.app.data.SearchHistory
 import com.dailymusic.app.data.Library
 import com.dailymusic.app.data.Song
 import com.dailymusic.app.playback.PlayerManager
@@ -51,11 +53,12 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 @Composable
 fun SearchScreen(
     contentPadding: PaddingValues,
-    onBack: () -> Unit,
+    onBack: (() -> Unit)?,
     onOpenArtist: (String) -> Unit,
     onPlay: (Song, List<Song>) -> Unit,
 ) {
     val colors = MiuixTheme.colorScheme
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val keyboard = LocalSoftwareKeyboardController.current
 
@@ -79,6 +82,7 @@ fun SearchScreen(
             searched = true
             val list = KugouApi.search(kw)
             results = list
+            if (list.isNotEmpty()) SearchHistory.add(context, kw)
             if (list.isEmpty()) error = "没有搜到「$kw」"
             loading = false
         }
@@ -111,16 +115,21 @@ fun SearchScreen(
     ) {
         item {
             Column(Modifier.fillMaxWidth().statusBarsPadding().padding(top = 6.dp)) {
-                // 搜索从底栏 tab 改成二级页了，所以补一个返回键。
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(start = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Box(
-                        modifier = Modifier.size(40.dp).clip(CircleShape).clickable(onClick = onBack),
-                        contentAlignment = Alignment.Center,
+                // 二级页进来要返回键；宽屏下它是侧栏的一级页，onBack 为 null 就不画。
+                if (onBack != null) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(start = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        TintedIcon(AppIcons.ArrowBack, colors.onSurface, 20.dp)
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .clickable(onClick = onBack),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            TintedIcon(AppIcons.ArrowBack, colors.onSurface, 20.dp)
+                        }
                     }
                 }
                 Text(
@@ -169,7 +178,14 @@ fun SearchScreen(
                         Box(
                             Modifier
                                 .size(22.dp)
-                                .clickable { query = "" },
+                                .clickable {
+                                    // 清空要连「已搜过」一起复位，否则结果区还挂着上一次的列表，
+                                    // 历史 / 热词区块永远出不来。
+                                    query = ""
+                                    results = emptyList()
+                                    error = null
+                                    searched = false
+                                },
                             contentAlignment = Alignment.Center,
                         ) {
                             TintedIcon(AppIcons.Close, colors.onSurfaceVariantSummary, 16.dp)
@@ -177,6 +193,50 @@ fun SearchScreen(
                     }
                 }
                 Spacer(Modifier.height(8.dp))
+            }
+        }
+
+        if (!searched && SearchHistory.items.isNotEmpty()) {
+            item { SectionTitle("搜索历史", trailing = "${SearchHistory.items.size} 条") }
+            item {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+                    SearchHistory.items.chunked(3).forEach { rowItems ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            rowItems.forEach { word ->
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(38.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(colors.surfaceContainer)
+                                        .clickable { runSearch(word) },
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(
+                                        text = word,
+                                        fontSize = 13.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        color = colors.onSurfaceSecondary,
+                                    )
+                                }
+                            }
+                            repeat(3 - rowItems.size) { Spacer(Modifier.weight(1f)) }
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(999.dp))
+                            .clickable { SearchHistory.clear(context) }
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                    ) {
+                        Text("清空历史", fontSize = 12.sp, color = colors.onSurfaceVariantSummary)
+                    }
+                }
             }
         }
 

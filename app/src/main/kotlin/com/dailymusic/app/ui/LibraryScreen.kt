@@ -50,7 +50,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 fun LibraryScreen(
     contentPadding: PaddingValues,
     initialTab: Int,
-    onBack: () -> Unit,
+    onBack: (() -> Unit)?,
     onPlay: (Song, List<Song>) -> Unit,
 ) {
     val colors = MiuixTheme.colorScheme
@@ -69,16 +69,21 @@ fun LibraryScreen(
                 .padding(start = 8.dp, end = 20.dp, top = 10.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .clickable(onClick = onBack),
-                contentAlignment = Alignment.Center,
-            ) {
-                TintedIcon(AppIcons.ArrowBack, colors.onSurface, 20.dp)
+            // 宽屏下它是侧栏的一级页，没有「返回」这回事
+            if (onBack != null) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .clickable(onClick = onBack),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    TintedIcon(AppIcons.ArrowBack, colors.onSurface, 20.dp)
+                }
+                Spacer(Modifier.size(6.dp))
+            } else {
+                Spacer(Modifier.size(8.dp))
             }
-            Spacer(Modifier.size(6.dp))
             Text(
                 text = if (tab == 0) "我的收藏" else "播放历史",
                 fontSize = 22.sp,

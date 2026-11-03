@@ -1251,6 +1251,12 @@ internal fun sweepFraction(line: LyricLine, position: Long): Float {
     val total = line.text.length
     if (total <= 0) return 0f
     if (position <= line.startMs) return 0f
+    // 普通 LRC 没有逐字时间轴（words 为空）。这时按整句时长线性推进，
+    // 否则循环一次都不走、直接返回 1f —— 表现为「歌词一出现就整句变白」。
+    if (line.words.isEmpty()) {
+        val d = line.durationMs.coerceAtLeast(1L)
+        return ((position - line.startMs).toFloat() / d).coerceIn(0f, 1f)
+    }
     var charsBefore = 0
     for (w in line.words) {
         val wEnd = w.startMs + w.durationMs

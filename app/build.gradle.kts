@@ -36,8 +36,9 @@ android {
         // 1.2.0 图标与歌词：小耳机兽图标 / 竖屏歌词 Apple Music 化 / 播放顺序。
         // 1.2.1 歌词换行与显示设置。
         // 1.2.2 歌手页。
-        versionCode = 15
-        versionName = "1.2.2"
+        // 1.3.0 平板改版：四项侧栏 / 宽屏播放条 / 搜索历史。
+        versionCode = 16
+        versionName = "1.3.0"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
