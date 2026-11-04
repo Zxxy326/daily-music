@@ -45,8 +45,9 @@ android {
         // 1.3.6 我的歌单封面。
         // 1.3.7 添加到歌单 / 新建歌单。
         // 1.3.8 自建歌单封面取首曲。
-        versionCode = 24
-        versionName = "1.3.8"
+        // 1.3.9 列表页也走首曲封面。
+        versionCode = 25
+        versionName = "1.3.9"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")

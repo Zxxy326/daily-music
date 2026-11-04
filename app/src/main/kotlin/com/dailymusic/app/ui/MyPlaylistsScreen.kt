@@ -129,8 +129,12 @@ private fun PlaylistRow(playlist: MyPlaylist, onClick: () -> Unit) {
     // 概念版的做法是拿这个歌单第一首歌的专辑图当封面 —— 这里照做，
     // 只对「没封面且不是空歌单」的那几个发请求，通常只有一两条。
     var derivedCover by remember(playlist.listid) { mutableStateOf<String?>(null) }
-    LaunchedEffect(playlist.listid, playlist.coverTemplate) {
-        if (playlist.coverTemplate.isNotBlank() || playlist.songCount <= 0) return@LaunchedEffect
+    LaunchedEffect(playlist.listid, playlist.coverTemplate, playlist.created) {
+        // 自建歌单即使「有封面」也要拉首曲 —— 那个封面其实是账号头像。
+        // 之前这里用 coverTemplate.isNotBlank() 直接 return，导致自建歌单永远走不到首曲逻辑。
+        val needFirstSong = playlist.songCount > 0 &&
+            (playlist.created || playlist.coverTemplate.isBlank())
+        if (!needFirstSong) return@LaunchedEffect
         // 注意别传 pageSize=1：`/playlist/track/all/new` 在小页长下会返回空，
         // 拉回来再取第一条就行（自建歌单本来就没多少首）。
         derivedCover = runCatching {
