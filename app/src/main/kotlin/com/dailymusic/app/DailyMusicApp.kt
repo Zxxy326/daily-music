@@ -41,9 +41,15 @@ object AppBootstrap {
 }
 
 class DailyMusicApp : Application() {
+
+    companion object {
+        lateinit var instance: DailyMusicApp
+            private set
+    }
     override fun onCreate() {
         super.onCreate()
         // 收藏 / 历史是同步读盘的（几百条 JSON，毫秒级），放在这里能让首帧就显示正确计数。
+        instance = this
         Library.init(this)
         // 收藏要同步到账号「我喜欢」，它的 listid / fileid 缓存同样要首帧就绪。
         FavoriteCloud.init(this)

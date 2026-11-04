@@ -196,15 +196,24 @@ fun PlaylistDetailScreen(
     contentPadding: PaddingValues,
     onBack: () -> Unit,
     onPlay: (Song, List<Song>) -> Unit,
+    /** 账号里的私有歌单要传 listid：走 `/playlist/track/all/new`，广场歌单不传。 */
+    listid: String? = null,
 ) {
     val colors = MiuixTheme.colorScheme
-    var songs by remember(playlist.trackKey) { mutableStateOf<List<Song>>(emptyList()) }
-    var loading by remember(playlist.trackKey) { mutableStateOf(true) }
-    var attempt by remember(playlist.trackKey) { mutableIntStateOf(0) }
+    val loadKey = listid ?: playlist.trackKey
+    var songs by remember(loadKey) { mutableStateOf<List<Song>>(emptyList()) }
+    var loading by remember(loadKey) { mutableStateOf(true) }
+    var attempt by remember(loadKey) { mutableIntStateOf(0) }
 
-    LaunchedEffect(playlist.trackKey, attempt) {
+    LaunchedEffect(loadKey, attempt) {
         loading = true
-        songs = runCatching { KugouApi.playlistSongs(playlist.trackKey) }.getOrDefault(emptyList())
+        songs = runCatching {
+            if (listid != null) {
+                KugouApi.myPlaylistSongs(listid)?.mapNotNull { Song.fromPlaylistFile(it) }.orEmpty()
+            } else {
+                KugouApi.playlistSongs(playlist.trackKey)
+            }
+        }.getOrDefault(emptyList())
         loading = false
     }
 

@@ -51,6 +51,7 @@ fun MineScreen(
     contentPadding: PaddingValues,
     onQualityChange: (String) -> Unit,
     onOpenLibrary: (Int) -> Unit,
+    onOpenMyPlaylists: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenLogin: () -> Unit,
     onOpenSignIn: () -> Unit,
@@ -279,6 +280,13 @@ fun MineScreen(
                     title = "播放历史",
                     subtitle = "${Library.history.size} 首",
                     onClick = { onOpenLibrary(1) },
+                )
+                EntryCard(
+                    modifier = Modifier.weight(1f),
+                    icon = AppIcons.ListBullet,
+                    title = "我的歌单",
+                    subtitle = "账号同步",
+                    onClick = onOpenMyPlaylists,
                 )
             }
         }

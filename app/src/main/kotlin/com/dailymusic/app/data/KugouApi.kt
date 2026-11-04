@@ -625,6 +625,19 @@ object KugouApi {
     }
 
     /**
+     * 账号里的全部歌单，拆成「我创建的」和「我收藏的」。
+     *
+     * 酷狗只给一个 `/user/playlist`，两类混在一起返回，靠 `type` / `list_create_userid`
+     * 区分（见 [MyPlaylist.from]）。没登录或请求失败返回 null，调用方要区分
+     * 「拉取失败」和「确实一个都没有」。
+     */
+    suspend fun myPlaylists(): List<MyPlaylist>? {
+        val items = userPlaylists(pageSize = 100) ?: return null
+        val me = Auth.currentUserId
+        return items.mapNotNull { MyPlaylist.from(it, me) }
+    }
+
+    /**
      * 自己歌单的曲目（`/playlist/track/all/new`），**带 `fileid`**。
      *
      * 不能用 `/playlist/track/all`：那个走 `global_collection_id`，「我喜欢」是私有歌单，

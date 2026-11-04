@@ -73,6 +73,7 @@ import com.dailymusic.app.data.Auth
 import com.dailymusic.app.data.FavoriteCloud
 import com.dailymusic.app.data.Library
 import com.dailymusic.app.data.LyricLine
+import com.dailymusic.app.data.MyPlaylist
 import com.dailymusic.app.data.PlaylistBrief
 import com.dailymusic.app.data.Profile
 import com.dailymusic.app.data.Rank
@@ -140,6 +141,12 @@ private sealed interface SubPage {
 
     /** 歌手页：从搜索结果里的歌手卡片进来，返回时回搜索页。 */
     data class Artist(val name: String, val backTo: SubPage? = null) : SubPage
+
+    /** 我的歌单（我创建的 + 我收藏的）。 */
+    data object MyPlaylists : SubPage
+
+    /** 账号里某个歌单的详情，走 listid。 */
+    data class MyPlaylistDetail(val playlist: MyPlaylist) : SubPage
 }
 
 /**
@@ -346,6 +353,27 @@ fun RootScreen() {
                         onPlay = { song, list -> PlayerManager.play(context, song, list) },
                     )
 
+                    sub is SubPage.MyPlaylists -> MyPlaylistsScreen(
+                        contentPadding = contentPadding,
+                        onBack = { subPage = null },
+                        onOpenPlaylist = { subPage = SubPage.MyPlaylistDetail(it) },
+                    )
+
+                    sub is SubPage.MyPlaylistDetail -> PlaylistDetailScreen(
+                        playlist = PlaylistBrief(
+                            id = sub.playlist.listid,
+                            name = sub.playlist.name,
+                            coverTemplate = sub.playlist.coverTemplate,
+                            songCount = sub.playlist.songCount,
+                            playCount = 0,
+                            globalCollectionId = "",
+                        ),
+                        contentPadding = contentPadding,
+                        onBack = { subPage = SubPage.MyPlaylists },
+                        onPlay = { song, list -> PlayerManager.play(context, song, list) },
+                        listid = sub.playlist.listid,
+                    )
+
                     sub is SubPage.PlaylistDetail -> PlaylistDetailScreen(
                         playlist = sub.playlist,
                         contentPadding = contentPadding,
@@ -441,6 +469,7 @@ fun RootScreen() {
                             // 底栏现在只有 0=首页 / 1=我的，写 tab=2 会落到 else 分支
                             // 又把「我的」渲染一遍 —— 表现就是点了没反应。
                             onOpenLibrary = { minePage = it },
+                            onOpenMyPlaylists = { subPage = SubPage.MyPlaylists },
                             onOpenSettings = { minePage = 4 },
                             onOpenLogin = { minePage = 2 },
                             onOpenSignIn = { minePage = 3 },

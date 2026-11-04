@@ -42,6 +42,9 @@ object Auth {
 
     private var token: String? = null
     private var userId: String? = null
+
+    /** 当前登录的 userid，用来判断歌单是「我创建的」还是「我收藏的」。 */
+    val currentUserId: String? get() = userId
     private var vipToken: String? = null
 
     /**

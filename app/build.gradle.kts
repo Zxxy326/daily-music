@@ -37,8 +37,9 @@ android {
         // 1.2.1 歌词换行与显示设置。
         // 1.2.2 歌手页。
         // 1.3.0 平板改版：四项侧栏 / 宽屏播放条 / 搜索历史。
-        versionCode = 16
-        versionName = "1.3.0"
+        // 1.3.1 我的歌单（我创建 + 我收藏，账号同步）。
+        versionCode = 17
+        versionName = "1.3.1"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
