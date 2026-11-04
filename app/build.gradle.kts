@@ -41,8 +41,9 @@ android {
         // 1.3.2 排行榜分区 + 热榜速览。
         // 1.3.3 我的歌单封面兜底 + 返回层级。
         // 1.3.4 歌单广场三列 + 新歌速递。
-        versionCode = 20
-        versionName = "1.3.4"
+        // 1.3.5 歌单广场分类 + 翻页修复。
+        versionCode = 21
+        versionName = "1.3.5"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")

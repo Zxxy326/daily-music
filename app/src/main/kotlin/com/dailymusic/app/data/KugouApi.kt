@@ -766,10 +766,19 @@ object KugouApi {
      * 返回结构是 `{ data: { special_list: [...], has_next: 0/1 } }`；
      * 部分版本会退化成 `data.plist` / `data.list`，所以三个键都试一遍。
      */
-    suspend fun playlistSquare(page: Int = 1, pageSize: Int = 20): PlaylistPage? {
+    suspend fun playlistSquare(
+        page: Int = 1,
+        pageSize: Int = 30,
+        /** 分类：0 = 推荐。其余取值见 PlaylistCategories。 */
+        categoryId: Int = 0,
+    ): PlaylistPage? {
         val j = Http.getJson(
             base(), "/top/playlist",
-            params = p("page" to page, "pagesize" to pageSize),
+            params = p(
+                "page" to page,
+                "pagesize" to pageSize,
+                "category_id" to categoryId,
+            ),
             timeoutMs = 25_000,
         ) ?: return null
         val data = j.obj("data") ?: j

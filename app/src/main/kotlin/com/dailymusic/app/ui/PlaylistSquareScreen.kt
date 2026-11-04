@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -50,6 +51,30 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
  * 两列瀑布卡片，滚到底自动续页。首页那个「歌单广场」入口以前直接跳搜索页 ——
  * 搜索只能按关键词找，用户想「随便逛逛」时没有落点。
  */
+/**
+ * 歌单分类。
+ *
+ * category_id 的语义没有公开文档，这批是**实测**出来的：对 1..30 逐个请求，
+ * 看返回歌单的 tag 反推 —— 空结果的（1~8、18、25、26）不收。
+ * 换 appid 或上游改版后这套会失效，失效的表现是「某个分类点进去是空的」。
+ */
+private data class PlaylistCategory(val label: String, val id: Int)
+
+private val PlaylistCategories = listOf(
+    PlaylistCategory("推荐", 0),
+    PlaylistCategory("流行", 9),
+    PlaylistCategory("经典", 12),
+    PlaylistCategory("粤语", 19),
+    PlaylistCategory("英语", 20),
+    PlaylistCategory("日语", 21),
+    PlaylistCategory("韩语", 23),
+    PlaylistCategory("摇滚", 29),
+    PlaylistCategory("古典", 28),
+    PlaylistCategory("轻音乐", 16),
+    PlaylistCategory("中国风", 11),
+    PlaylistCategory("舞曲", 10),
+)
+
 @Composable
 fun PlaylistSquareScreen(
     contentPadding: PaddingValues,
@@ -62,13 +87,14 @@ fun PlaylistSquareScreen(
     var loading by remember { mutableStateOf(false) }
     var failed by remember { mutableStateOf(false) }
     var attempt by remember { mutableIntStateOf(0) }
+    var categoryIndex by remember { mutableIntStateOf(0) }
 
     val listState = rememberLazyListState()
 
     suspend fun load(target: Int) {
         if (loading) return
         loading = true
-        val result = KugouApi.playlistSquare(target)
+        val result = KugouApi.playlistSquare(target, categoryId = PlaylistCategories[categoryIndex].id)
         if (result == null) {
             failed = items.isEmpty()
         } else {
@@ -82,10 +108,12 @@ fun PlaylistSquareScreen(
         loading = false
     }
 
-    LaunchedEffect(attempt) {
+    LaunchedEffect(attempt, categoryIndex) {
         items = emptyList()
         hasNext = true
+        page = 1
         load(1)
+        listState.scrollToItem(0)
     }
 
     // 触底续页：用最后可见下标判断，比监听滚动量稳（快速甩动也不会漏触发）。
@@ -112,6 +140,37 @@ fun PlaylistSquareScreen(
                 subtitle = if (items.isEmpty()) "" else "已加载 ${items.size} 个",
                 onBack = onBack,
             )
+        }
+
+        // 分类：横向一排胶囊，和概念版一致
+        item {
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                itemsIndexed(PlaylistCategories) { i, c ->
+                    val on = i == categoryIndex
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(
+                                if (on) MiuixTheme.colorScheme.primary
+                                else MiuixTheme.colorScheme.surfaceContainer,
+                            )
+                            .clickable { categoryIndex = i }
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                    ) {
+                        Text(
+                            text = c.label,
+                            fontSize = 13.sp,
+                            fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
+                            color = if (on) MiuixTheme.colorScheme.onPrimary
+                            else MiuixTheme.colorScheme.onSurfaceSecondary,
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(10.dp))
         }
 
         if (failed) {
