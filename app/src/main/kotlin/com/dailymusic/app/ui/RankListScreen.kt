@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import com.dailymusic.app.data.Song
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -78,15 +80,32 @@ fun RankListScreen(
             loading -> item { LoadingHint("正在拉取榜单…") }
             ranks.isEmpty() -> item { EmptyHint("没有拿到榜单数据", "重试") { attempt++ } }
             else -> {
-                // 单列列表，和首页「推荐歌单」保持一致。
-                // 之前是两列大卡：55 个榜要滑二十多屏，而且每屏只有 4 个封面能看，
-                // 「有哪些榜」这件事反而看不出来。
-                itemsIndexed(ranks, key = { _, r -> r.id }) { index, rank ->
-                    RankRow(
-                        rank = rank,
-                        showDivider = index > 0,
-                        onClick = { onOpenRank(rank) },
-                    )
+                // ---- 顶部：热榜速览（每张卡带前三首）----
+                val featured = pickFeatured(ranks)
+                if (featured.isNotEmpty()) {
+                    item { SectionTitle("热榜速览", trailing = "更新于今天") }
+                    items(featured, key = { "f-${it.id}" }) { rank ->
+                        RankPreviewCard(rank = rank, onClick = { onOpenRank(rank) })
+                    }
+                    item { Spacer(Modifier.height(8.dp)) }
+                }
+
+                // ---- 下面按上游分类分组 ----
+                // 上游 classify：2 地区榜、3 特色榜、4 全球榜、5 曲风榜，1 是热歌/新歌。
+                // 不分组的话 55 个榜平铺，用户根本不知道「有哪些类别」。
+                RankSections.forEach { section ->
+                    val group = ranks.filter { it.classify == section.classify }
+                    if (group.isNotEmpty()) {
+                        item { SectionTitle(section.title, trailing = "${group.size} 个") }
+                        itemsIndexed(group, key = { _, r -> r.id }) { index, rank ->
+                            RankRow(
+                                rank = rank,
+                                showDivider = index > 0,
+                                onClick = { onOpenRank(rank) },
+                            )
+                        }
+                        item { Spacer(Modifier.height(10.dp)) }
+                    }
                 }
             }
         }
@@ -252,5 +271,115 @@ fun EmptyHint(text: String, action: String? = null, onAction: (() -> Unit)? = nu
                 )
             }
         }
+    }
+}
+
+
+/** 榜单分区：标题 + 上游 classify。顺序就是页面上的顺序。 */
+private data class RankSection(val title: String, val classify: Int)
+
+private val RankSections = listOf(
+    RankSection("新歌榜单", 2),
+    RankSection("特色榜单", 3),
+    RankSection("全球榜单", 4),
+    RankSection("曲风榜单", 5),
+    RankSection("热歌榜单", 1),
+)
+
+/**
+ * 顶部「热榜速览」挑哪几个。
+ *
+ * 概念版首页那五张卡（助力周榜 / 概念版热歌榜 / 概念版飙升榜 / 说唱先锋榜 / ACG 新歌榜）
+ * 走的是概念版自己的接口，我们代理的 `/rank/list` 里没有这几个 id。
+ *
+ * 但实测对得上：概念版飙升榜/说唱先锋榜/ACG 新歌榜的前三首，和 6666/44412/33162
+ * 三个榜**完全一致**；概念版热歌榜和 TOP500 有 2/3 重合，就用 TOP500 顶。
+ * 只有「助力周榜」是概念版自己的运营活动榜，没有对应物，不放。
+ */
+private val FEATURED_IDS = listOf(8888L, 6666L, 44412L, 33162L, 82831L)
+
+private fun pickFeatured(ranks: List<Rank>): List<Rank> {
+    val byId = ranks.associateBy { it.id }
+    val picked = FEATURED_IDS.mapNotNull { byId[it] }
+    return picked.ifEmpty { ranks.take(5) }
+}
+
+/**
+ * 热榜速览卡片：左文右图，左边带前三首歌。
+ *
+ * 前三首是单独一次 `/rank/audio` 请求（pagesize=3），只在卡片进入组合时拉一次；
+ * 5 张卡就是 5 个请求，比一次性拉 5×60 首省得多。
+ */
+@Composable
+private fun RankPreviewCard(rank: Rank, onClick: () -> Unit) {
+    val colors = MiuixTheme.colorScheme
+    var top by remember(rank.id) { mutableStateOf<List<Song>>(emptyList()) }
+
+    LaunchedEffect(rank.id) {
+        top = runCatching { KugouApi.rankSongs(rank.id, pageSize = 3) }.getOrDefault(emptyList())
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .background(colors.surfaceContainer)
+            .clickable(onClick = onClick)
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = rank.name,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                color = colors.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(8.dp))
+            if (top.isEmpty()) {
+                Text(
+                    text = if (rank.updateHint.isBlank()) " " else rank.updateHint,
+                    fontSize = 11.5.sp,
+                    color = colors.onSurfaceVariantSummary,
+                )
+            } else {
+                top.forEachIndexed { i, song ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "${i + 1}.",
+                            fontSize = 12.5.sp,
+                            color = colors.onSurfaceVariantSummary,
+                            modifier = Modifier.width(18.dp),
+                        )
+                        Text(
+                            text = song.name,
+                            fontSize = 12.5.sp,
+                            color = colors.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                        Text(
+                            text = " — ${song.singer}",
+                            fontSize = 12.sp,
+                            color = colors.onSurfaceVariantSummary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                    }
+                    if (i != top.lastIndex) Spacer(Modifier.height(3.dp))
+                }
+            }
+        }
+        Spacer(Modifier.width(12.dp))
+        RemoteImage(
+            url = rank.cover(240).orEmpty(),
+            modifier = Modifier.size(64.dp),
+            shape = RoundedCornerShape(14.dp),
+        )
     }
 }

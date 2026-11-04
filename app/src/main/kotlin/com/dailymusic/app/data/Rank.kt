@@ -15,6 +15,8 @@ data class Rank(
     val coverTemplate: String,
     val playCount: Long,
     val updateHint: String,
+    /** 上游的分类：1 热歌/新歌、2 地区、3 特色、4 全球、5 曲风。 */
+    val classify: Int = 0,
 ) {
     fun cover(size: Int = 240): String? =
         coverTemplate.takeIf { it.isNotBlank() }?.replace("{size}", size.toString())
@@ -38,6 +40,7 @@ data class Rank(
                 coverTemplate = o.str("album_img_9").ifBlank { o.str("img_9") },
                 playCount = o.long("play_times"),
                 updateHint = o.str("update_frequency"),
+                classify = o.int("classify"),
             )
         }
     }
