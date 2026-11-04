@@ -308,7 +308,9 @@ fun PlaylistDetailScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 PlaylistCover(
-                    url = playlist.cover(400).takeIf { it.isNotBlank() },
+                    // 歌单自己没封面时，用里面第一首歌的专辑图顶上
+                    url = playlist.cover(400).takeIf { it.isNotBlank() }
+                        ?: songs.firstOrNull()?.cover(400),
                     name = playlist.name,
                     size = 104.dp,
                     shape = RoundedCornerShape(20.dp),

@@ -22,6 +22,36 @@ data class MyPlaylist(
     fun cover(size: Int = 320): String = coverTemplate.replace("{size}", size.toString())
 
     companion object {
+        /** 像图片地址：http 开头 + 常见图床/后缀。 */
+        private fun looksLikeImage(v: String): Boolean =
+            v.startsWith("http") &&
+                (v.contains("kgimg.com") || v.contains(".jpg") ||
+                    v.contains(".jpeg") || v.contains(".png") || v.contains(".webp"))
+
+        /**
+         * 取封面。
+         *
+         * `/user/playlist` 的封面字段名很不统一：自建歌单常常整段为空，
+         * 收藏来的歌单又可能塞在 `pic` / `flexible_cover` 里。所以先按已知字段试，
+         * 再扫一遍所有字符串字段找「像图片地址」的那个 —— 比猜字段名靠谱。
+         */
+        private fun pickCover(o: JSONObject): String {
+            val known = listOf(
+                "imgurl", "sizable_cover", "cover", "pic", "img", "img_9",
+                "album_img_9", "album_img", "flexible_cover",
+            )
+            known.forEach { k ->
+                val v = o.str(k)
+                if (v.isNotBlank() && looksLikeImage(v)) return v
+            }
+            val keys = o.keys()
+            while (keys.hasNext()) {
+                val v = o.opt(keys.next()) as? String ?: continue
+                if (looksLikeImage(v)) return v
+            }
+            return ""
+        }
+
         fun from(o: JSONObject, meUserId: String?): MyPlaylist? {
             val listid = o.str("listid").ifBlank { o.str("listId") }
             val name = o.str("name")
@@ -37,12 +67,7 @@ data class MyPlaylist(
             return MyPlaylist(
                 listid = listid,
                 name = name,
-                // 自建歌单大多没有自定义封面，`imgurl` 经常是空串。
-                // 多试几个字段，实在没有就交给 UI 生成一张渐变色卡（概念版就是这么做的）。
-                coverTemplate = listOf("imgurl", "sizable_cover", "cover", "img", "img_9", "album_img_9")
-                    .map { o.str(it) }
-                    .firstOrNull { it.isNotBlank() }
-                    .orEmpty(),
+                coverTemplate = pickCover(o),
                 songCount = o.int("song_count").takeIf { it > 0 } ?: o.int("count"),
                 created = !collected,
                 isDefault = isDef != 0,

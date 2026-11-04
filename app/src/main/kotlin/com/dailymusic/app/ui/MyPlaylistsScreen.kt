@@ -27,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -122,6 +123,21 @@ fun MyPlaylistsScreen(
 @Composable
 private fun PlaylistRow(playlist: MyPlaylist, onClick: () -> Unit) {
     val colors = MiuixTheme.colorScheme
+
+    // 账号歌单经常没有自己的封面（「我喜欢的音乐」就是典型）。
+    // 概念版的做法是拿这个歌单第一首歌的专辑图当封面 —— 这里照做，
+    // 只对「没封面且不是空歌单」的那几个发请求，通常只有一两条。
+    var derivedCover by remember(playlist.listid) { mutableStateOf<String?>(null) }
+    LaunchedEffect(playlist.listid, playlist.coverTemplate) {
+        if (playlist.coverTemplate.isNotBlank() || playlist.songCount <= 0) return@LaunchedEffect
+        derivedCover = runCatching {
+            KugouApi.myPlaylistSongs(playlist.listid, page = 1, pageSize = 1)
+                ?.firstOrNull()
+                ?.let { com.dailymusic.app.data.Song.fromPlaylistFile(it) }
+                ?.cover(300)
+        }.getOrNull()
+    }
+    val coverUrl = playlist.cover(200).takeIf { it.isNotBlank() } ?: derivedCover
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -130,9 +146,16 @@ private fun PlaylistRow(playlist: MyPlaylist, onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         PlaylistCover(
-            url = playlist.cover(200).takeIf { it.isNotBlank() },
+            url = coverUrl,
             name = playlist.name,
             size = 56.dp,
+            // 「默认收藏」在概念版里就是一颗粉心，没有封面
+            icon = if (playlist.isDefault && coverUrl == null) AppIcons.Heart else null,
+            gradient = if (playlist.isDefault && coverUrl == null) {
+                Color(0xFFFFC2D4) to Color(0xFFFF7BA0)
+            } else {
+                null
+            },
         )
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {

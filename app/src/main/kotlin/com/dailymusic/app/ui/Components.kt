@@ -342,6 +342,10 @@ fun PlaylistCover(
     size: Dp,
     shape: Shape = RoundedCornerShape(14.dp),
     corner: Dp = 14.dp,
+    /** 没图时画的图标；不给就用名字首字。 */
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    /** 指定渐变色（不给就按名字哈希取）。 */
+    gradient: Pair<Color, Color>? = null,
 ) {
     val palette = listOf(
         Color(0xFFB79CFF) to Color(0xFF8B6BFF),
@@ -352,7 +356,7 @@ fun PlaylistCover(
         Color(0xFF9EE0A6) to Color(0xFF4CAF50),
     )
     val idx = ((name.hashCode() % palette.size) + palette.size) % palette.size
-    val (c1, c2) = palette[idx]
+    val (c1, c2) = gradient ?: palette[idx]
 
     Box(
         modifier = Modifier
@@ -369,6 +373,8 @@ fun PlaylistCover(
                 shape = shape,
                 showFallbackIcon = true,
             )
+        } else if (icon != null) {
+            TintedIcon(icon, Color.White.copy(alpha = 0.95f), size * 0.42f)
         } else {
             Text(
                 text = name.trim().take(1).ifBlank { "♪" },
