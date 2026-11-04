@@ -228,6 +228,8 @@ fun RootScreen() {
             lyricsOpen -> lyricsOpen = false
             playerOpen -> playerOpen = false
             openRank != null -> openRank = null
+            // 歌单详情要退回「我的歌单」列表，而不是一路退到 tab 根
+            subPage is SubPage.MyPlaylistDetail -> subPage = SubPage.MyPlaylists
             subPage != null -> subPage = null
             minePage >= 0 -> minePage = -1
             // 在任何非首页 tab 按返回：先回首页，而不是直接把 App 退到桌面。

@@ -129,21 +129,11 @@ private fun PlaylistRow(playlist: MyPlaylist, onClick: () -> Unit) {
             .padding(horizontal = 20.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            Modifier
-                .size(56.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .background(colors.surfaceContainerHigh),
-        ) {
-            if (playlist.coverTemplate.isNotBlank()) {
-                RemoteImage(
-                    url = playlist.cover(200),
-                    modifier = Modifier.fillMaxSize(),
-                    shape = RoundedCornerShape(14.dp),
-                    showFallbackIcon = true,
-                )
-            }
-        }
+        PlaylistCover(
+            url = playlist.cover(200).takeIf { it.isNotBlank() },
+            name = playlist.name,
+            size = 56.dp,
+        )
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(

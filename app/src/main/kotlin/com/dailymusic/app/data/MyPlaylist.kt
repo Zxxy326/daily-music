@@ -37,7 +37,12 @@ data class MyPlaylist(
             return MyPlaylist(
                 listid = listid,
                 name = name,
-                coverTemplate = o.str("imgurl").ifBlank { o.str("img") },
+                // 自建歌单大多没有自定义封面，`imgurl` 经常是空串。
+                // 多试几个字段，实在没有就交给 UI 生成一张渐变色卡（概念版就是这么做的）。
+                coverTemplate = listOf("imgurl", "sizable_cover", "cover", "img", "img_9", "album_img_9")
+                    .map { o.str(it) }
+                    .firstOrNull { it.isNotBlank() }
+                    .orEmpty(),
                 songCount = o.int("song_count").takeIf { it > 0 } ?: o.int("count"),
                 created = !collected,
                 isDefault = isDef != 0,

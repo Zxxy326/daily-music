@@ -39,8 +39,9 @@ android {
         // 1.3.0 平板改版：四项侧栏 / 宽屏播放条 / 搜索历史。
         // 1.3.1 我的歌单（我创建 + 我收藏，账号同步）。
         // 1.3.2 排行榜分区 + 热榜速览。
-        versionCode = 18
-        versionName = "1.3.2"
+        // 1.3.3 我的歌单封面兜底 + 返回层级。
+        versionCode = 19
+        versionName = "1.3.3"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")

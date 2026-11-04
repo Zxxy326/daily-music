@@ -231,9 +231,10 @@ fun PlaylistDetailScreen(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                RemoteImage(
-                    url = playlist.cover(400),
-                    modifier = Modifier.size(104.dp),
+                PlaylistCover(
+                    url = playlist.cover(400).takeIf { it.isNotBlank() },
+                    name = playlist.name,
+                    size = 104.dp,
                     shape = RoundedCornerShape(20.dp),
                 )
                 Spacer(Modifier.width(14.dp))

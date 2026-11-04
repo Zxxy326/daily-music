@@ -6,6 +6,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -17,6 +18,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.Brush
 import androidx.core.view.WindowCompat
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.runtime.DisposableEffect
@@ -322,6 +325,57 @@ fun SystemBarIcons(light: Boolean) {
         onDispose {
             controller.isAppearanceLightStatusBars = prevStatus
             controller.isAppearanceLightNavigationBars = prevNav
+        }
+    }
+}
+
+/**
+ * 歌单封面：有图用图，没图生成一张渐变色卡 + 首字。
+ *
+ * 账号里的自建歌单大多没设封面，酷狗那侧返回空串。直接留白会变成一片灰块，
+ * 概念版的做法是给一张彩色占位卡 —— 这里按名字哈希取色，同一个歌单每次颜色都一样。
+ */
+@Composable
+fun PlaylistCover(
+    url: String?,
+    name: String,
+    size: Dp,
+    shape: Shape = RoundedCornerShape(14.dp),
+    corner: Dp = 14.dp,
+) {
+    val palette = listOf(
+        Color(0xFFB79CFF) to Color(0xFF8B6BFF),
+        Color(0xFF7FC4FF) to Color(0xFF4A8CFF),
+        Color(0xFF7BE0C8) to Color(0xFF35B894),
+        Color(0xFFFFC46B) to Color(0xFFFF8A3D),
+        Color(0xFFFF9BB0) to Color(0xFFF0455E),
+        Color(0xFF9EE0A6) to Color(0xFF4CAF50),
+    )
+    val idx = ((name.hashCode() % palette.size) + palette.size) % palette.size
+    val (c1, c2) = palette[idx]
+
+    Box(
+        modifier = Modifier
+            .size(size)
+            .clip(shape)
+            .background(Brush.linearGradient(listOf(c1, c2))),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (!url.isNullOrBlank()) {
+            // 有 URL 但加载失败时也别留白：下面那层渐变还在，再叠一个音符图标
+            RemoteImage(
+                url = url,
+                modifier = Modifier.fillMaxSize(),
+                shape = shape,
+                showFallbackIcon = true,
+            )
+        } else {
+            Text(
+                text = name.trim().take(1).ifBlank { "♪" },
+                fontSize = (size.value * 0.36f).sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White.copy(alpha = 0.92f),
+            )
         }
     }
 }
