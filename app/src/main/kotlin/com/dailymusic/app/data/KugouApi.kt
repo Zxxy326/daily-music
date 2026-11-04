@@ -686,7 +686,7 @@ object KugouApi {
      * 所以先试几种路径，都不中就**重新拉一次 `/user/playlist` 按名字找最新那个** ——
      * 比死磕返回格式可靠。
      */
-    suspend fun createPlaylist(name: String): String? {
+    suspend fun createPlaylist(name: String): PlaylistCreateResult {
         val j = Http.getJson(
             base(), "/playlist/add",
             params = p(
@@ -698,18 +698,35 @@ object KugouApi {
                 "list_create_listid" to 0,
             ),
             timeoutMs = 25_000,
-        ) ?: return null
+        ) ?: return PlaylistCreateResult(null, "请求超时或网络错误")
         val data = j.obj("data")
-        data?.str("listid")?.takeIf { it.isNotBlank() && it != "0" }?.let { return it }
-        data?.arr("info")?.optJSONObject(0)?.str("listid")?.takeIf { it.isNotBlank() }?.let { return it }
-        j.str("listid").takeIf { it.isNotBlank() && it != "0" }?.let { return it }
+        data?.str("listid")?.takeIf { it.isNotBlank() && it != "0" }
+            ?.let { return PlaylistCreateResult(it, null) }
+        data?.arr("info")?.optJSONObject(0)?.str("listid")?.takeIf { it.isNotBlank() }
+            ?.let { return PlaylistCreateResult(it, null) }
+        j.str("listid").takeIf { it.isNotBlank() && it != "0" }
+            ?.let { return PlaylistCreateResult(it, null) }
 
-        // 兜底：按名字找刚建好的那个
-        val mine = myPlaylists() ?: return null
-        return mine
-            .filter { it.name == name && it.created }
-            .maxByOrNull { it.listid.toLongOrNull() ?: 0L }
-            ?.listid
+        // 再深挖一层：返回结构各家版本不一样，直接在整棵树里找第一个 listid
+        deepFindListId(j, 0)?.let { return PlaylistCreateResult(it, null) }
+
+        // 最后兜底：按名字找刚建好的那个。
+        // **不按 created 过滤** —— 新建歌单的 list_create_userid 有时回的是 0，
+        // 会被判成「收藏」，一过滤就找不到了（上一版就是这么误报失败的）。
+        val hit = myPlaylists()
+            ?.filter { it.name == name }
+            ?.maxByOrNull { it.listid.toLongOrNull() ?: 0L }
+        if (hit != null) return PlaylistCreateResult(hit.listid, null)
+
+        // 都失败：把上游的错误码带回去，方便定位（界面上会显示）
+        val code = j.int("error_code").takeIf { it != 0 } ?: j.int("errcode")
+        val msg = j.str("error_msg").ifBlank { j.str("msg") }
+        val detail = buildString {
+            if (code != 0) append(code)
+            if (msg.isNotBlank()) { if (isNotEmpty()) append(' '); append(msg) }
+            if (isEmpty()) append("返回里没有 listid")
+        }
+        return PlaylistCreateResult(null, detail)
     }
 
     /**
@@ -724,6 +741,28 @@ object KugouApi {
         val j = playlistTracksAdd(listid, payload) ?: return false
         return j.int("status") == 1
     }
+
+    /** 在 JSON 树里递归找第一个非 0 的 `listid`（返回结构不固定时兜底）。 */
+    private fun deepFindListId(node: Any?, depth: Int): String? {
+        if (depth > 4 || node == null) return null
+        when (node) {
+            is JSONObject -> {
+                node.optString("listid").takeIf { it.isNotBlank() && it != "0" }?.let { return it }
+                for (k in node.keys()) {
+                    deepFindListId(node.opt(k), depth + 1)?.let { return it }
+                }
+            }
+            is JSONArray -> {
+                for (i in 0 until node.length()) {
+                    deepFindListId(node.opt(i), depth + 1)?.let { return it }
+                }
+            }
+        }
+        return null
+    }
+
+    /** 新建歌单的结果：成功给 listid，失败给可读原因（含上游错误码）。 */
+    data class PlaylistCreateResult(val listid: String?, val error: String?)
 
     /** 从歌单删歌（`/playlist/tracks/del`）。`fileids` 是歌单记录 fileid，不是 hash。 */
     suspend fun playlistTracksDel(listid: String, fileids: String): JSONObject? =

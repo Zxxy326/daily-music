@@ -608,10 +608,11 @@ private fun ColumnScope.AddToPlaylistContent(
         if (n.isEmpty() || busy) return
         busy = true
         scope.launch {
-            val id = runCatching { KugouApi.createPlaylist(n) }.getOrNull()
+            val res = runCatching { KugouApi.createPlaylist(n) }.getOrNull()
+            val id = res?.listid
             if (id.isNullOrBlank()) {
                 busy = false
-                hint = "新建歌单失败"
+                hint = "新建歌单失败：" + (res?.error ?: "未知原因")
                 return@launch
             }
             val ok = runCatching { KugouApi.addSongToPlaylist(id, song) }.getOrDefault(false)

@@ -40,6 +40,14 @@ import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /**
+ * 首曲封面的内存缓存。
+ *
+ * 不缓存的话，每次进「我的歌单」都要重新拉一遍第一首歌，列表第一帧先画占位、
+ * 拉到之后才换成真封面 —— 肉眼看就是「闪一下」。缓存之后第二次进来就是直接出图。
+ */
+private val derivedCoverCache = HashMap<String, String>()
+
+/**
  * 我的歌单：我创建的 + 我收藏的。
  *
  * 数据全部来自账号（`/user/playlist`），换设备登录看到的是同一份 —— 不做本地缓存，
@@ -128,7 +136,9 @@ private fun PlaylistRow(playlist: MyPlaylist, onClick: () -> Unit) {
     // 账号歌单经常没有自己的封面（「我喜欢的音乐」就是典型）。
     // 概念版的做法是拿这个歌单第一首歌的专辑图当封面 —— 这里照做，
     // 只对「没封面且不是空歌单」的那几个发请求，通常只有一两条。
-    var derivedCover by remember(playlist.listid) { mutableStateOf<String?>(null) }
+    var derivedCover by remember(playlist.listid) {
+        mutableStateOf(derivedCoverCache[playlist.listid])
+    }
     LaunchedEffect(playlist.listid, playlist.coverTemplate, playlist.created) {
         // 自建歌单即使「有封面」也要拉首曲 —— 那个封面其实是账号头像。
         // 之前这里用 coverTemplate.isNotBlank() 直接 return，导致自建歌单永远走不到首曲逻辑。
@@ -137,19 +147,23 @@ private fun PlaylistRow(playlist: MyPlaylist, onClick: () -> Unit) {
         if (!needFirstSong) return@LaunchedEffect
         // 注意别传 pageSize=1：`/playlist/track/all/new` 在小页长下会返回空，
         // 拉回来再取第一条就行（自建歌单本来就没多少首）。
-        derivedCover = runCatching {
+        val url = runCatching {
             KugouApi.myPlaylistSongs(playlist.listid)
                 ?.firstOrNull()
                 ?.let { com.dailymusic.app.data.Song.fromPlaylistFile(it) }
                 ?.cover(300)
         }.getOrNull()
+        if (!url.isNullOrBlank()) {
+            derivedCoverCache[playlist.listid] = url
+            derivedCover = url
+        }
     }
     // 我创建的歌单：有歌 → 用第一首歌的封面；没歌 → 用账号头像。
     // 收藏来的歌单：用歌单自己的封面，没有才退回首曲。
     // （自建歌单接口经常把「账号头像」塞进封面字段，所以自建的一律优先首曲。）
     val coverUrl = when {
+        // 加载中返回 null（画渐变色卡），不要先画头像再换 —— 那一下很跳
         playlist.created && playlist.songCount > 0 -> derivedCover
-            ?: playlist.cover(200).takeIf { it.isNotBlank() }
         playlist.created -> Profile.avatar.takeIf { it.isNotBlank() }
             ?: playlist.cover(200).takeIf { it.isNotBlank() }
         else -> playlist.cover(200).takeIf { it.isNotBlank() } ?: derivedCover
