@@ -22,6 +22,8 @@ data class PlaylistBrief(
     val playCount: Long,
     val collectCount: Long = 0,
     val globalCollectionId: String,
+    /** 广场歌单的分类标签（流行 / R&B / 车载…），卡片左上角那颗小胶囊。 */
+    val tag: String = "",
 ) {
     fun cover(size: Int = 320): String = coverTemplate.replace("{size}", size.toString())
 
@@ -71,6 +73,9 @@ data class PlaylistBrief(
                     ?: o.long("play_count").takeIf { it > 0 }
                     ?: o.long("total_play_count"),
                 globalCollectionId = gcid,
+                tag = o.arr("tags")?.optJSONObject(0)?.str("tag_name")
+                    ?.ifBlank { null }
+                    ?: o.arr("abtags")?.optJSONObject(0)?.str("name").orEmpty(),
             )
         }
     }

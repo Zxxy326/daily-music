@@ -40,8 +40,9 @@ android {
         // 1.3.1 我的歌单（我创建 + 我收藏，账号同步）。
         // 1.3.2 排行榜分区 + 热榜速览。
         // 1.3.3 我的歌单封面兜底 + 返回层级。
-        versionCode = 19
-        versionName = "1.3.3"
+        // 1.3.4 歌单广场三列 + 新歌速递。
+        versionCode = 20
+        versionName = "1.3.4"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")

@@ -65,6 +65,7 @@ private val QuickEntries = listOf(
     QuickEntry("每日推荐", AppIcons.Sparkle, listOf(Color(0xFFFFD08A), Color(0xFFF97F5F))),
     QuickEntry("排行榜", AppIcons.Chart, listOf(Color(0xFF9FD8FF), Color(0xFF4A8DF0))),
     QuickEntry("歌单广场", AppIcons.ListBullet, listOf(Color(0xFFC7B6FF), Color(0xFF7B5CF0))),
+    QuickEntry("新歌速递", AppIcons.MusicNote, listOf(Color(0xFFFFC2D4), Color(0xFFF06A9B))),
     QuickEntry("识曲", AppIcons.Mic, listOf(Color(0xFFA8ECD0), Color(0xFF3FB894))),
 )
 
@@ -84,6 +85,7 @@ fun HomeScreen(
     onOpenRank: (Rank) -> Unit,
     onPlay: (Song, List<Song>) -> Unit,
     onOpenDaily: () -> Unit,
+    onOpenNewSongs: () -> Unit,
     onOpenRankList: () -> Unit,
     onOpenPlaylistSquare: () -> Unit,
     onOpenRecognize: () -> Unit,
@@ -226,6 +228,7 @@ fun HomeScreen(
                                 "每日推荐" -> onOpenDaily()
                                 "排行榜" -> onOpenRankList()
                                 "歌单广场" -> onOpenPlaylistSquare()
+                                "新歌速递" -> onOpenNewSongs()
                                 else -> onOpenRecognize()
                             }
                         }

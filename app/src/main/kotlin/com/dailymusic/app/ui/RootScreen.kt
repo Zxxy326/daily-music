@@ -142,6 +142,9 @@ private sealed interface SubPage {
     /** 歌手页：从搜索结果里的歌手卡片进来，返回时回搜索页。 */
     data class Artist(val name: String, val backTo: SubPage? = null) : SubPage
 
+    /** 新歌速递。 */
+    data object NewSongs : SubPage
+
     /** 我的歌单（我创建的 + 我收藏的）。 */
     data object MyPlaylists : SubPage
 
@@ -355,6 +358,12 @@ fun RootScreen() {
                         onPlay = { song, list -> PlayerManager.play(context, song, list) },
                     )
 
+                    sub is SubPage.NewSongs -> NewSongScreen(
+                        contentPadding = contentPadding,
+                        onBack = { subPage = null },
+                        onPlay = { song, list -> PlayerManager.play(context, song, list) },
+                    )
+
                     sub is SubPage.MyPlaylists -> MyPlaylistsScreen(
                         contentPadding = contentPadding,
                         onBack = { subPage = null },
@@ -438,6 +447,7 @@ fun RootScreen() {
                         onOpenRank = { openRank = it },
                         onPlay = { song, list -> PlayerManager.play(context, song, list) },
                         onOpenDaily = { subPage = SubPage.Daily },
+                        onOpenNewSongs = { subPage = SubPage.NewSongs },
                         onOpenRankList = { subPage = SubPage.RankList },
                         onOpenPlaylistSquare = { subPage = SubPage.PlaylistSquare },
                         onOpenRecognize = { subPage = SubPage.Recognize },

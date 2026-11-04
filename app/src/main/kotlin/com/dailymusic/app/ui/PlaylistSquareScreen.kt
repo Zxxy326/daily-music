@@ -98,7 +98,8 @@ fun PlaylistSquareScreen(
             }
     }
 
-    val rows = items.chunked(2)
+    // 概念版是三列：一屏能看到 9 个封面，「有哪些歌单」比「封面多大」更重要
+    val rows = items.chunked(3)
 
     LazyColumn(
         state = listState,
@@ -121,15 +122,15 @@ fun PlaylistSquareScreen(
 
         itemsIndexed(rows) { _, row ->
             Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-                horizontalArrangement = Arrangement.spacedBy(13.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(9.dp),
             ) {
                 for (pl in row) {
                     PlaylistTile(pl, Modifier.weight(1f)) { onOpenPlaylist(pl) }
                 }
-                if (row.size == 1) Spacer(Modifier.weight(1f))
+                repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
             }
-            Spacer(Modifier.height(13.dp))
+            Spacer(Modifier.height(12.dp))
         }
 
         if (items.isNotEmpty() && !hasNext) {
@@ -149,37 +150,53 @@ fun PlaylistSquareScreen(
 @Composable
 private fun PlaylistTile(pl: PlaylistBrief, modifier: Modifier, onClick: () -> Unit) {
     val colors = MiuixTheme.colorScheme
-    Column(modifier = modifier.clip(RoundedCornerShape(22.dp)).clickable(onClick = onClick)) {
+    Column(modifier = modifier.clip(RoundedCornerShape(14.dp)).clickable(onClick = onClick)) {
         Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
             RemoteImage(
                 url = pl.cover(320),
                 modifier = Modifier.fillMaxSize(),
-                shape = RoundedCornerShape(22.dp),
+                shape = RoundedCornerShape(14.dp),
             )
+            // 左上角分类标签：概念版的识别度主要来自这颗胶囊
+            if (pl.tag.isNotBlank()) {
+                Text(
+                    text = pl.tag,
+                    fontSize = 9.5.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color.White,
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(6.dp)
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(Color.Black.copy(alpha = 0.34f))
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                )
+            }
+            // 播放量放右下角，和标签错开
             if (pl.playCountText.isNotBlank()) {
                 Text(
                     text = "▶ ${pl.playCountText}",
-                    fontSize = 10.sp,
+                    fontSize = 9.5.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = Color.White,
                     modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .padding(8.dp)
+                        .align(Alignment.BottomEnd)
+                        .padding(6.dp)
                         .clip(RoundedCornerShape(999.dp))
                         .background(Color.Black.copy(alpha = 0.42f))
-                        .padding(horizontal = 7.dp, vertical = 3.dp),
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
                 )
             }
         }
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(6.dp))
         Text(
             text = pl.name,
-            fontSize = 13.5.sp,
+            fontSize = 12.5.sp,
             fontWeight = FontWeight.SemiBold,
             color = colors.onSurface,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
-            lineHeight = 17.sp,
+            lineHeight = 16.sp,
         )
     }
 }
