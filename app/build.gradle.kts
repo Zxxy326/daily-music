@@ -43,8 +43,9 @@ android {
         // 1.3.4 歌单广场三列 + 新歌速递。
         // 1.3.5 歌单广场分类 + 翻页修复。
         // 1.3.6 我的歌单封面。
-        versionCode = 22
-        versionName = "1.3.6"
+        // 1.3.7 添加到歌单 / 新建歌单。
+        versionCode = 23
+        versionName = "1.3.7"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")

@@ -137,6 +137,7 @@ private fun PlaylistRow(playlist: MyPlaylist, onClick: () -> Unit) {
                 ?.cover(300)
         }.getOrNull()
     }
+    // 统一规则，不按名字特判：歌单自己的封面 → 里面第一首歌的专辑图 → 渐变色卡
     val coverUrl = playlist.cover(200).takeIf { it.isNotBlank() } ?: derivedCover
     Row(
         modifier = Modifier
@@ -149,13 +150,8 @@ private fun PlaylistRow(playlist: MyPlaylist, onClick: () -> Unit) {
             url = coverUrl,
             name = playlist.name,
             size = 56.dp,
-            // 「默认收藏」在概念版里就是一颗粉心，没有封面
-            icon = if (playlist.isDefault && coverUrl == null) AppIcons.Heart else null,
-            gradient = if (playlist.isDefault && coverUrl == null) {
-                Color(0xFFFFC2D4) to Color(0xFFFF7BA0)
-            } else {
-                null
-            },
+            icon = null,
+            gradient = null,
         )
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {

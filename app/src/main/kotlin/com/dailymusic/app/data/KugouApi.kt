@@ -679,6 +679,52 @@ object KugouApi {
             timeoutMs = 25_000,
         )
 
+    /**
+     * 新建歌单（`/playlist/add`），返回新歌单的 listid。
+     *
+     * 上游的返回结构不稳定（有的版本给 `data.listid`，有的包一层 `info`），
+     * 所以先试几种路径，都不中就**重新拉一次 `/user/playlist` 按名字找最新那个** ——
+     * 比死磕返回格式可靠。
+     */
+    suspend fun createPlaylist(name: String): String? {
+        val j = Http.getJson(
+            base(), "/playlist/add",
+            params = p(
+                "name" to name,
+                "type" to 0,
+                "source" to 1,
+                "is_pri" to 0,
+                "list_create_userid" to (Auth.currentUserId ?: "0"),
+                "list_create_listid" to 0,
+            ),
+            timeoutMs = 25_000,
+        ) ?: return null
+        val data = j.obj("data")
+        data?.str("listid")?.takeIf { it.isNotBlank() && it != "0" }?.let { return it }
+        data?.arr("info")?.optJSONObject(0)?.str("listid")?.takeIf { it.isNotBlank() }?.let { return it }
+        j.str("listid").takeIf { it.isNotBlank() && it != "0" }?.let { return it }
+
+        // 兜底：按名字找刚建好的那个
+        val mine = myPlaylists() ?: return null
+        return mine
+            .filter { it.name == name && it.created }
+            .maxByOrNull { it.listid.toLongOrNull() ?: 0L }
+            ?.listid
+    }
+
+    /**
+     * 把一首歌加进歌单（`/playlist/tracks/add`）。
+     *
+     * `data` 四段必须给全：`歌名|hash|album_id|album_audio_id`。
+     * 少后两段在部分曲库下会直接报错。
+     */
+    suspend fun addSongToPlaylist(listid: String, song: Song): Boolean {
+        if (listid.isBlank()) return false
+        val payload = "${song.name}|${song.hash}|${song.albumId}|${song.albumAudioId}"
+        val j = playlistTracksAdd(listid, payload) ?: return false
+        return j.int("status") == 1
+    }
+
     /** 从歌单删歌（`/playlist/tracks/del`）。`fileids` 是歌单记录 fileid，不是 hash。 */
     suspend fun playlistTracksDel(listid: String, fileids: String): JSONObject? =
         Http.getJson(

@@ -32,6 +32,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -54,6 +57,11 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.view.WindowCompat
+import kotlinx.coroutines.launch
+import com.dailymusic.app.data.MyPlaylist
+import com.dailymusic.app.data.KugouApi
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.LaunchedEffect
 
 /**
  * 播放相关的三个底部弹层：队列 / 睡眠定时 / 更多。
@@ -364,11 +372,14 @@ fun MoreSheet(song: Song, onDismiss: () -> Unit) {
     val context = LocalContext.current
     var showInfo by remember { mutableStateOf(false) }
     var showLyricStyle by remember { mutableStateOf(false) }
+    var showAddTo by remember { mutableStateOf(false) }
     val favorite = Library.isFavorite(song.key)
 
     SheetScaffold(onDismiss) {
         SheetHandle()
-        if (showLyricStyle) {
+        if (showAddTo) {
+            AddToPlaylistContent(song = song, onDismiss = onDismiss, onBack = { showAddTo = false })
+        } else if (showLyricStyle) {
             SheetTitle(title = "歌词显示")
             ChipGroup(
                 label = "对齐方式",
@@ -449,6 +460,12 @@ fun MoreSheet(song: Song, onDismiss: () -> Unit) {
                     copyToClipboard(context, shareUrl(song))
                     onDismiss()
                 },
+            )
+            SheetRow(
+                icon = AppIcons.ListBullet,
+                title = "添加到歌单",
+                subtitle = "收藏到账号里的自建歌单",
+                onClick = { showAddTo = true },
             )
             SheetRow(
                 icon = AppIcons.Tune,
@@ -539,4 +556,173 @@ private fun formatSize(bytes: Long): String = when {
     bytes >= 1024L * 1024L -> "%.1f MB".format(bytes / 1024.0 / 1024.0)
     bytes >= 1024L -> "%.0f KB".format(bytes / 1024.0)
     else -> "$bytes B"
+}
+
+
+/**
+ * 「添加到歌单」面板内容（挂在 [MoreSheet] 里，不另开 Dialog —— 弹层套弹层在
+ * Android 上容易出现返回键关错层的问题）。
+ *
+ * 只列**自己创建的**歌单：收藏来的歌单是别人的，往里加歌会失败。
+ */
+@Composable
+private fun ColumnScope.AddToPlaylistContent(
+    song: Song,
+    onDismiss: () -> Unit,
+    onBack: () -> Unit,
+) {
+    val colors = MiuixTheme.colorScheme
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+
+    var playlists by remember { mutableStateOf<List<MyPlaylist>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    var creating by remember { mutableStateOf(false) }
+    var name by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var hint by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(Unit) {
+        playlists = runCatching { KugouApi.myPlaylists() }.getOrNull()
+            ?.filter { it.created } ?: emptyList()
+        loading = false
+    }
+
+    fun addTo(listid: String, title: String) {
+        if (busy) return
+        busy = true
+        scope.launch {
+            val ok = runCatching { KugouApi.addSongToPlaylist(listid, song) }.getOrDefault(false)
+            busy = false
+            if (ok) {
+                Toast.makeText(context, "已添加到《$title》", Toast.LENGTH_SHORT).show()
+                onDismiss()
+            } else {
+                hint = "添加失败，稍后再试"
+            }
+        }
+    }
+
+    fun createAndAdd() {
+        val n = name.trim()
+        if (n.isEmpty() || busy) return
+        busy = true
+        scope.launch {
+            val id = runCatching { KugouApi.createPlaylist(n) }.getOrNull()
+            if (id.isNullOrBlank()) {
+                busy = false
+                hint = "新建歌单失败"
+                return@launch
+            }
+            val ok = runCatching { KugouApi.addSongToPlaylist(id, song) }.getOrDefault(false)
+            busy = false
+            if (ok) {
+                Toast.makeText(context, "已新建《$n》并添加", Toast.LENGTH_SHORT).show()
+                onDismiss()
+            } else {
+                hint = "歌单建好了，但加歌失败"
+            }
+        }
+    }
+
+    SheetTitle(title = "添加到歌单", subtitle = song.name)
+
+    if (creating) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 6.dp)) {
+            Text("新歌单名称", fontSize = 12.5.sp, color = colors.onSurfaceVariantSummary)
+            Spacer(Modifier.height(8.dp))
+            BasicTextField(
+                value = name,
+                onValueChange = { name = it.take(30) },
+                singleLine = true,
+                textStyle = TextStyle(fontSize = 15.sp, color = colors.onSurface),
+                cursorBrush = SolidColor(colors.primary),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(colors.surfaceContainerHigh)
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                decorationBox = { inner ->
+                    if (name.isEmpty()) {
+                        Text("给这个歌单起个名字", fontSize = 15.sp, color = colors.onSurfaceVariantSummary)
+                    }
+                    inner()
+                },
+            )
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(42.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(colors.surfaceContainerHigh)
+                        .clickable { creating = false; name = "" },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text("取消", fontSize = 14.sp, color = colors.onSurfaceSecondary)
+                }
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(42.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(if (name.isBlank() || busy) colors.surfaceContainerHigh else colors.primary)
+                        .clickable(enabled = name.isNotBlank() && !busy) { createAndAdd() },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = if (busy) "创建中…" else "创建并添加",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (name.isBlank() || busy) colors.onSurfaceVariantSummary else colors.onPrimary,
+                    )
+                }
+            }
+        }
+    } else {
+        SheetRow(
+            icon = AppIcons.Add,
+            title = "新建歌单",
+            subtitle = "创建后自动把这首歌加进去",
+            onClick = { creating = true },
+        )
+    }
+
+    hint?.let {
+        Text(
+            text = it,
+            modifier = Modifier.padding(horizontal = 22.dp, vertical = 6.dp),
+            fontSize = 12.5.sp,
+            color = Color(0xFFF0455E),
+        )
+    }
+
+    if (loading) {
+        Text(
+            text = "正在读取账号歌单…",
+            modifier = Modifier.padding(horizontal = 22.dp, vertical = 12.dp),
+            fontSize = 12.5.sp,
+            color = colors.onSurfaceVariantSummary,
+        )
+    } else if (playlists.isEmpty()) {
+        Text(
+            text = "还没有自建歌单，先新建一个吧",
+            modifier = Modifier.padding(horizontal = 22.dp, vertical = 12.dp),
+            fontSize = 12.5.sp,
+            color = colors.onSurfaceVariantSummary,
+        )
+    } else {
+        // 最多露 6 个，再多让用户去「我的歌单」里整理
+        playlists.take(6).forEach { p ->
+            SheetRow(
+                icon = AppIcons.QueueMusic,
+                title = p.name,
+                subtitle = if (p.songCount > 0) "${p.songCount} 首" else null,
+                onClick = { addTo(p.listid, p.name) },
+            )
+        }
+    }
+
+    SheetRow(icon = AppIcons.ArrowBack, title = "返回") { onBack() }
 }
