@@ -44,9 +44,16 @@ data class MyPlaylist(
                 val v = o.str(k)
                 if (v.isNotBlank() && looksLikeImage(v)) return v
             }
+            // 扫全字段时**跳过头像类字段**：`/user/playlist` 里带着账号头像，
+            // 不排除的话「我创建的歌单」会全部显示成头像，看起来像没封面。
             val keys = o.keys()
             while (keys.hasNext()) {
-                val v = o.opt(keys.next()) as? String ?: continue
+                val k = keys.next()
+                val lk = k.lowercase()
+                if (lk.contains("avatar") || lk.contains("head") ||
+                    lk.contains("portrait") || lk.contains("icon") || lk.contains("logo")
+                ) continue
+                val v = o.opt(k) as? String ?: continue
                 if (looksLikeImage(v)) return v
             }
             return ""

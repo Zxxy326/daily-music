@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.sp
 import com.dailymusic.app.data.Auth
 import com.dailymusic.app.data.KugouApi
 import com.dailymusic.app.data.MyPlaylist
+import com.dailymusic.app.data.Profile
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
@@ -130,15 +131,25 @@ private fun PlaylistRow(playlist: MyPlaylist, onClick: () -> Unit) {
     var derivedCover by remember(playlist.listid) { mutableStateOf<String?>(null) }
     LaunchedEffect(playlist.listid, playlist.coverTemplate) {
         if (playlist.coverTemplate.isNotBlank() || playlist.songCount <= 0) return@LaunchedEffect
+        // 注意别传 pageSize=1：`/playlist/track/all/new` 在小页长下会返回空，
+        // 拉回来再取第一条就行（自建歌单本来就没多少首）。
         derivedCover = runCatching {
-            KugouApi.myPlaylistSongs(playlist.listid, page = 1, pageSize = 1)
+            KugouApi.myPlaylistSongs(playlist.listid)
                 ?.firstOrNull()
                 ?.let { com.dailymusic.app.data.Song.fromPlaylistFile(it) }
                 ?.cover(300)
         }.getOrNull()
     }
-    // 统一规则，不按名字特判：歌单自己的封面 → 里面第一首歌的专辑图 → 渐变色卡
-    val coverUrl = playlist.cover(200).takeIf { it.isNotBlank() } ?: derivedCover
+    // 我创建的歌单：有歌 → 用第一首歌的封面；没歌 → 用账号头像。
+    // 收藏来的歌单：用歌单自己的封面，没有才退回首曲。
+    // （自建歌单接口经常把「账号头像」塞进封面字段，所以自建的一律优先首曲。）
+    val coverUrl = when {
+        playlist.created && playlist.songCount > 0 -> derivedCover
+            ?: playlist.cover(200).takeIf { it.isNotBlank() }
+        playlist.created -> Profile.avatar.takeIf { it.isNotBlank() }
+            ?: playlist.cover(200).takeIf { it.isNotBlank() }
+        else -> playlist.cover(200).takeIf { it.isNotBlank() } ?: derivedCover
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()

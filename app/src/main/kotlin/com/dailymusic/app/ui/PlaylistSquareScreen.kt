@@ -308,9 +308,15 @@ fun PlaylistDetailScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 PlaylistCover(
-                    // 歌单自己没封面时，用里面第一首歌的专辑图顶上
-                    url = playlist.cover(400).takeIf { it.isNotBlank() }
-                        ?: songs.firstOrNull()?.cover(400),
+                    // 账号里的自建歌单：优先用第一首歌的封面（歌单自带的那个字段
+                    // 经常是账号头像，不可信）；广场歌单没有 listid，还是用自己的封面。
+                    url = if (listid != null) {
+                        songs.firstOrNull()?.cover(400)
+                            ?: playlist.cover(400).takeIf { it.isNotBlank() }
+                    } else {
+                        playlist.cover(400).takeIf { it.isNotBlank() }
+                            ?: songs.firstOrNull()?.cover(400)
+                    },
                     name = playlist.name,
                     size = 104.dp,
                     shape = RoundedCornerShape(20.dp),
