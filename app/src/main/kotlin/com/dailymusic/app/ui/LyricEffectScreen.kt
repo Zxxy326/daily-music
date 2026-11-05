@@ -87,6 +87,7 @@ import com.dailymusic.app.data.LyricLine
 import com.dailymusic.app.data.Lyrics
 import com.dailymusic.app.data.Song
 import com.dailymusic.app.playback.PlayerManager
+import com.dailymusic.app.playback.SpectrumShaper
 import com.dailymusic.app.playback.SpectrumTap
 import kotlinx.coroutines.delay
 import top.yukonga.miuix.kmp.basic.Text
@@ -389,9 +390,20 @@ private fun WavePage(song: Song, lyrics: Lyrics, position: Long) {
 
     // 相位在帧回调里积分，不用 infiniteRepeatable：固定周期做不出「跟着鼓点走」。
     var phase by remember { mutableFloatStateOf(0f) }
-    var bass by remember { mutableFloatStateOf(0f) }
-    var mid by remember { mutableFloatStateOf(0f) }
-    var high by remember { mutableFloatStateOf(0f) }
+
+    /**
+     * 驱动一切的**唯一标量**：整首歌「现在有多响」。
+     *
+     * 之前速度、环亮度、环宽度分别由 bass / mid / high 三个自适应标量驱动，
+     * 问题是这三档的波动幅度差很远（低频常年 0.7~0.9、高频 0.1~0.3），
+     * 各自平滑的节奏也不一样，叠在一起就是「一顿一顿」。
+     * 现在压成一个加权总能量，所有视觉量都从它派生，节奏才是同一条。
+     */
+    var energy by remember { mutableFloatStateOf(0f) }
+
+    // 56 bin → 0..1 柱高，曲线与 vinyl-player 的 spectrum.js 逐行对齐。
+    // out 是普通 FloatArray，不参与快照：phase 每帧变会顺带触发重组，绘制时直接读最新值。
+    val shaper = remember { SpectrumShaper() }
 
     // 帧循环只启动一次，position / lyrics 会一直变，用 rememberUpdatedState 取最新值。
     val latestPosition = rememberUpdatedState(position)
@@ -404,9 +416,18 @@ private fun WavePage(song: Song, lyrics: Lyrics, position: Long) {
             withFrameNanos { now ->
                 val dt = if (last == 0L) 0f else (now - last) / 1_000_000_000f
                 last = now
-                bass = SpectrumTap.bass
-                mid = SpectrumTap.mid
-                high = SpectrumTap.high
+                shaper.update(SpectrumTap.bins)
+
+                // 加权总能量：低频为主（鼓点最容易被看见），中高频只补一点厚度。
+                // 直接平均会让高频段把整体拉低，安静段落更看不出起伏。
+                val rawE = 0.55f * shaper.band(0, 10) +
+                    0.30f * shaper.band(10, 32) +
+                    0.15f * shaper.band(32, SpectrumTap.BARS)
+
+                // 长时平滑：起 260ms、落 750ms。
+                // 快起慢落是电平表的手感；落得慢一点，句子之间的空隙不会「掉下去再爬上来」。
+                val ke = if (rawE > energy) 1f - exp(-dt / 0.26f) else 1f - exp(-dt / 0.75f)
+                energy += (rawE - energy) * ke
 
                 // 速度有三路输入：
                 // 1. 频谱的低频 / 中频 —— 有鼓点时最准；
@@ -417,17 +438,18 @@ private fun WavePage(song: Song, lyrics: Lyrics, position: Long) {
                 val line = lyr.lines.getOrNull(lyr.anchorIndex(pos).coerceAtLeast(0))
                 val pulse = wordPulse(line, pos)
 
-                // 目标速度：低频 + 中频 + 逐字脉冲，再夹一个上限
-                val target = (0.05f + 0.45f * bass + 0.10f * mid + 0.25f * pulse)
-                    .coerceAtMost(0.60f)
+                // 目标速度：总能量为主，逐字脉冲只做「轻轻推一下」（0.10），
+                // 不再让它主导 —— 每字一次脉冲会把相位推成碎步，看着就是卡。
+                val target = (0.06f + 0.40f * energy + 0.10f * pulse)
+                    .coerceAtMost(0.50f)
 
                 // 速度本身再做一次「快上慢落」的平滑。
                 // 直接拿 bass 当速度会每秒抖十几次，看起来像随机跳帧；
                 // 平滑成「一记鼓点冲上去、半秒内落回来」才有「被音乐推着走」的观感。
                 val k = if (target > speedSmooth) {
-                    1f - exp(-dt / 0.12f)
+                    1f - exp(-dt / 0.30f)
                 } else {
-                    1f - exp(-dt / 0.45f)
+                    1f - exp(-dt / 0.90f)
                 }
                 speedSmooth += (target - speedSmooth) * k
                 phase = (phase + dt * speedSmooth) % 1f
@@ -459,7 +481,7 @@ private fun WavePage(song: Song, lyrics: Lyrics, position: Long) {
                 // 竖向压暗要用 DstIn 混合，必须先在离屏层里画。
                 .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen),
         ) {
-            drawWaveField(phase, bass, mid, high, palette)
+            drawWaveField(phase, energy, shaper, palette)
         }
 
         // 中间压暗垫：波纹本来就淡出，再垫一层保证歌词区绝对干净。
@@ -723,21 +745,22 @@ private const val RING_BASE = 5
 
 private fun DrawScope.drawWaveField(
     phase: Float,
-    bass: Float,
-    mid: Float,
-    high: Float,
+    energy: Float,
+    shaper: SpectrumShaper,
     palette: CoverPalette,
 ) {
     val w = size.width
     val h = size.height
 
-    val band = w * 0.075f * (1f + 0.60f * mid)      // 中频 → 波带宽度
+    // 波带宽度、整体亮度、加强环的出现与否 —— 全部从同一个 energy 派生。
+    // 三个量同涨同落，才不会出现「带子变宽的同时环变暗」这种自相矛盾的一帧。
+    val band = w * 0.075f * (1f + 0.50f * energy)
     val maxR = w * 0.40f                            // 单侧最远只荡到 40% 屏宽
-    val loud = 0.45f + 0.75f * bass                 // 低频 → 整体亮度
+    val loud = 0.45f + 0.70f * energy
 
-    // 第 5 条「加强环」按低频强度淡入淡出。
+    // 第 6 条「加强环」随能量淡入淡出。
     // 不能改环数 —— 环的相位是 i/rings，改总数会让所有环瞬间挪位、画面像卡了一下。
-    val extra = ((bass - 0.55f) / 0.35f).coerceIn(0f, 1f)
+    val extra = ((energy - 0.42f) / 0.38f).coerceIn(0f, 1f)
 
     // 两个波源都在屏幕外，且与歌词同高
     val sources = listOf(Offset(-w * 0.02f, h * 0.5f), Offset(w * 1.02f, h * 0.5f))
@@ -746,7 +769,15 @@ private fun DrawScope.drawWaveField(
         for (i in 0 until RING_SLOTS) {
             // 5 条基础环 + 1 条插在中间的加强环
             val offset = if (i < RING_BASE) i / RING_BASE.toFloat() else 0.1f
-            val gate = if (i < RING_BASE) 1f else extra
+            // 环亮度**主要由总能量决定**，频段只给 ±12% 的着色。
+            // 之前每条环独立认领一段频段，低频段 0.8、高频段 0.2，六条环亮暗差三倍，
+            // 看起来就是「有的环在闪、有的环不动」。压平之后整片是同一次呼吸。
+            val segFrom = (i * SpectrumTap.BARS / RING_BASE)
+            val segTo = ((i + 1) * SpectrumTap.BARS / RING_BASE)
+            val tint = (shaper.band(segFrom, segTo) - energy).coerceIn(-0.30f, 0.30f)
+            val tone = 0.94f + 0.20f * tint
+            val gate = if (i < RING_BASE) (0.42f + 0.58f * energy) * tone
+            else extra * (0.42f + 0.58f * energy) * tone
             if (gate <= 0.01f) continue
             val p = (phase + offset) % 1f
             val r = maxR * p
@@ -757,7 +788,7 @@ private fun DrawScope.drawWaveField(
             val a = 0.78f * loud * gate * fin * fin * fout * fout
             if (a <= 0.004f) continue
 
-            val ringVar = (if (i % 2 == 0) 1f else 0.78f) * (0.80f + 0.40f * high)
+            val ringVar = (if (i % 2 == 0) 1f else 0.80f) * (0.82f + 0.30f * energy)
 
             val outer = r + band * 0.5f
             if (outer <= 1f) continue

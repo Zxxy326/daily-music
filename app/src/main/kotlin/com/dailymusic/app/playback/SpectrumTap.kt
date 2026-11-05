@@ -6,30 +6,46 @@ import androidx.media3.common.audio.BaseAudioProcessor
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.PI
+import kotlin.math.ceil
 import kotlin.math.cos
+import kotlin.math.hypot
 import kotlin.math.log10
+import kotlin.math.min
+import kotlin.math.pow
 import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
  * 实时频谱。
  *
- * 为什么不走 `android.media.audiofx.Visualizer`：那东西要 RECORD_AUDIO 运行时授权，
- * 一个播放器为了画个波纹去弹录音权限，用户第一反应是关掉。
+ * 为什么不走 `android.media.audiofx.Visualizer`：那东西在 Android 9+ 抓输出混音要
+ * RECORD_AUDIO 运行时授权，部分 OEM 直接返回空数据，一个播放器为了画个波纹去弹录音
+ * 权限，用户第一反应是关掉。
  *
  * 这里直接在 ExoPlayer 的音频链路里插一个 [AudioProcessor]：数据本来就以 PCM 流过，
  * 顺手做一次 FFT 就行，零权限、零额外解码。
  *
- * 三档能量分别喂给 WAVE 动效：
- * - `bass` 20–250Hz（底鼓 / 贝斯）→ 出波快慢 + 整体亮度
- * - `mid`  250–2000Hz（人声）      → 波带宽度
- * - `high` 2000–8000Hz（镲片）     → 环与环的明暗差
+ * 对外提供两套读数：
+ *
+ * 1. **[bins]** —— 56 个对数分频、值域 0..255 的原始幅值。与 vinyl-player 的
+ *    `buildBins()`（JS 侧）用**同一套公式**，所以两端套同一条曲线后形态一致：
+ *    分段对数（38Hz..min(16.5k, nyq*0.92)）、每段取峰值 bin、dB 固定映射 -100..-30。
+ * 2. **bass / mid / high** —— 三档标量，给需要「一个数」的地方用（波纹推进速度等）。
+ *    它走的是自适应动态范围，不同响度的歌都能用满 0..1。
  *
  * 注意：**必须关掉音频直通（offload）**，否则 MP3/AAC 会绕过整条 AudioProcessor 链，
  * 表现是「有声音，但这里一次都收不到数据」。见 PlaybackService 里的
  * `setAudioOffloadSupportProvider`。
  */
 object SpectrumTap {
+
+    /** 分频段数。改这个值 JS 侧也要一起改，否则两端曲线对不上。 */
+    const val BARS = 56
+
+    /** 56 个对数分频 bin，值域 0..255。每帧替换引用，读线程不会读到写了一半的数组。 */
+    @Volatile
+    var bins: IntArray = IntArray(BARS)
+        private set
 
     @Volatile
     var bass: Float = 0f
@@ -43,7 +59,11 @@ object SpectrumTap {
     var high: Float = 0f
         private set
 
-    private const val FFT_SIZE = 1024
+    /**
+     * 2048 而不是 1024：低频分辨率从 43Hz 提到 21.5Hz，38Hz 起分的那几段才有意义。
+     * 代价是每次分析要多等一个窗口（约 46ms@44.1k），视觉上察觉不到。
+     */
+    private const val FFT_SIZE = 2048
 
     private val re = FloatArray(FFT_SIZE)
     private val im = FloatArray(FFT_SIZE)
@@ -55,6 +75,16 @@ object SpectrumTap {
     /** 每档自己的「最近动态范围」（上限 / 下限），见 [mapBand]。 */
     private val hiDb = floatArrayOf(-28f, -28f, -28f)
     private val loDb = floatArrayOf(-60f, -60f, -60f)
+
+    /** 双缓冲：音频线程写一个，发布另一个，UI 线程随便读。 */
+    private val binA = IntArray(BARS)
+    private val binB = IntArray(BARS)
+    private var binFlip = false
+
+    /** 对数分频的 [start, end) 频点，sampleRate 变了才重建。 */
+    private val segStart = IntArray(BARS)
+    private val segEnd = IntArray(BARS)
+    private var segRate = 0
 
     private var fill = 0
     private var sampleRate = 44_100
@@ -68,13 +98,16 @@ object SpectrumTap {
         high = 0f
         hiDb.fill(-28f)
         loDb.fill(-60f)
+        binA.fill(0)
+        binB.fill(0)
+        bins = binA
     }
 
     /**
      * 从音频链路里喂一段 PCM。**只读**，不动 buffer 的 position。
      *
      * 调用方在播放线程上，所以这里不能分配对象、不能做重活：
-     * 1024 点 FFT 大约几万次浮点运算，够快。
+     * 2048 点 FFT 大约十几万次浮点运算，够快。
      */
     fun feed(buffer: ByteBuffer, format: AudioProcessor.AudioFormat) {
         val ch = format.channelCount.coerceAtLeast(1)
@@ -159,6 +192,54 @@ object SpectrumTap {
         bass = smooth(bass, mapBand(0, bandDb(20f, 250f, binHz)))
         mid = smooth(mid, mapBand(1, bandDb(250f, 2_000f, binHz)))
         high = smooth(high, mapBand(2, bandDb(2_000f, 8_000f, binHz)))
+
+        publishBins()
+    }
+
+    /**
+     * 56 个对数分频 bin，与 vinyl-player 的 JS `buildBins()` 逐行对应。
+     *
+     * 为什么固定 dB 区间（-100..-30）而不是像 [mapBand] 那样自适应：
+     * 这条数据是给「柱状图/波纹」这类连续视觉用的，跨设备、跨曲目要能直接比大小；
+     * 自适应一旦介入，安静的歌也会被拉满，就分不出「真的响」和「被放大的安静」。
+     * 需要相对强度的地方，交给 [SpectrumShaper] 里那道自适应增益。
+     */
+    private fun publishBins() {
+        val half = FFT_SIZE / 2
+        val nyq = sampleRate / 2.0
+        if (segRate != sampleRate) {
+            rebuildSegments(nyq, half)
+            segRate = sampleRate
+        }
+
+        // 写另一个缓冲，写完再换引用 —— 读线程不会看到写了一半的数组
+        val target = if (binFlip) binA else binB
+        binFlip = !binFlip
+
+        for (b in 0 until BARS) {
+            var peak = 0f
+            for (k in segStart[b] until segEnd[b]) {
+                val mag = hypot(re[k], im[k]) * 2f / FFT_SIZE
+                if (mag > peak) peak = mag
+            }
+            val db = 20.0 * log10(peak + 1e-9)
+            target[b] = (((db + 100.0) / 70.0) * 255.0).toInt().coerceIn(0, 255)
+        }
+        bins = target
+    }
+
+    /** 对数分频：低频不会被挤成一根柱子。公式与 JS 侧完全一致，改一处就要改两处。 */
+    private fun rebuildSegments(nyq: Double, half: Int) {
+        val fMin = 38.0
+        val fMax = min(16_500.0, nyq * 0.92)
+        for (b in 0 until BARS) {
+            val f0 = fMin * (fMax / fMin).pow(b.toDouble() / BARS)
+            val f1 = fMin * (fMax / fMin).pow((b + 1).toDouble() / BARS)
+            val s = (f0 / nyq * half).toInt().coerceIn(0, half - 1)
+            val e = ceil(f1 / nyq * half).toInt().coerceIn(s + 1, half)
+            segStart[b] = s
+            segEnd[b] = e
+        }
     }
 
     /**

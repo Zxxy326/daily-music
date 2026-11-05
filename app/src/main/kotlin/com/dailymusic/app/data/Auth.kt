@@ -139,6 +139,7 @@ object Auth {
     }
 
     fun clear() {
+        YouthVip.resetRenewCooldown()
         token = null
         userId = null
         vipToken = null

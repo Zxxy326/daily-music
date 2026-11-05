@@ -335,7 +335,13 @@ object YouthVip {
      * 网络异常 / 其它错误码一律返回 true（不判死）—— 不能因为一次网络抖动就把用户
      * 踢去重新登录。
      */
+    /** 续期材料不被接受时的冷却截止时间。见 [renewLogin] 里的说明。 */
+    @Volatile
+    private var renewBlockedUntil = 0L
+
     suspend fun renewLogin(): Boolean = renewMutex.withLock {
+        // 冷却期内直接当「还活着」—— 省掉每次进「我的」都白跑一次注定 20018 的请求。
+        if (System.currentTimeMillis() < renewBlockedUntil) return@withLock true
         val oldToken = Auth.currentToken() ?: return@withLock false
         val oldUserId = Auth.currentUserId() ?: return@withLock false
         // 没有 t1 就别打这个接口。
@@ -356,8 +362,25 @@ object YouthVip {
         Log.i("DailyMusic", "login/token status=$status code=$code")
         if (status != 1) {
             val dead = code == 20002 || code == 20010 || code == 20018
-            if (dead) Log.w("DailyMusic", "登录态失效：${j.bizMessage()}（$code）")
-            return@withLock !dead
+            if (!dead) return@withLock true
+            // 续期被拒 ≠ token 已死。
+            //
+            // 真机实测（验证码登录）：拿上游返回的 t1 去 `/login/token` 一律回 20018，
+            // 但同一张 token 打 `/user/detail` 完全正常 —— 昵称、头像、歌单全都能拉到。
+            // 只看续期码就会把「续不上」误判成「登录失效」，用户刚登进去就看到红字
+            // 「登录态已失效，请重新登录」，而实际上什么都没坏。
+            //
+            // 所以补一次 detail 确认：它是唯一能精确判定 token 死活的接口。
+            val probe = runCatching { KugouApi.userDetail() }.getOrNull()
+            if (probe != null && probe.int("status") == 1) {
+                Log.w("DailyMusic", "续期被拒（$code），但 user/detail 正常 —— 不判死")
+                // 这张 t1 上游不认，短时间内别再试。10 分钟后才重新探测，
+                // 免得每次进「我的」都多一次注定失败的往返。
+                renewBlockedUntil = System.currentTimeMillis() + 10 * 60_000L
+                return@withLock true
+            }
+            Log.w("DailyMusic", "登录态失效：${j.bizMessage()}（$code）")
+            return@withLock false
         }
 
         val data = j.obj("data") ?: return@withLock true
@@ -391,6 +414,11 @@ object YouthVip {
         if (j.int("status") == 1) return true
         val code = j.int("error_code")
         return code != 20002 && code != 20010 && code != 20018
+    }
+
+    /** 退出登录时清掉冷却，换账号后能重新探测。 */
+    fun resetRenewCooldown() {
+        renewBlockedUntil = 0L
     }
 
     private fun markSigned(day: String) {

@@ -435,7 +435,9 @@ object KugouApi {
         ) ?: return LoginState.Waiting
 
         val data = j.obj("data") ?: j
-        val status = data.int("status").takeIf { it != 0 } ?: j.int("status")
+        // 不能写 takeIf { it != 0 }：0 是有效值（二维码过期），被当成「没有」之后
+        // 会回退到顶层 status，可能拿到上一次的旧值，把「过期」误判成「等待」。
+        val status = if (data.has("status")) data.int("status") else j.int("status")
         // 扫码是全流程里最难查的一环：上游把「过期 / 等待 / 已扫 / 成功」都塞在
         // `data.status`，失败时还可能是字符串。这条日志是唯一的现场证据。
         Log.i("DailyMusic", "qr/check status=$status key=${key.take(8)}…")
@@ -444,15 +446,18 @@ object KugouApi {
             1 -> LoginState.Waiting
             2 -> LoginState.Scanned
             4 -> {
-                // Rust 侧在成功时把 token/userid 提升到响应体顶层，两处都兜一下。
-                val token = j.str("token").ifBlank { data.str("token") }
-                val userId = j.str("userid").ifBlank { data.str("userid") }
+                // 顶层 → data → 整棵树递归找。写死 data.token 会漏掉
+                // data.user_info.token 这类结构，表现就是「看到了账号信息却登录失败」。
+                val token = j.str("token").ifBlank { j.deepFind(TOKEN_KEYS) }
+                val userId = j.str("userid").ifBlank { j.deepFind(USERID_KEYS) }
+                dumpLogin("qr/check ok", j)
                 Log.i(
                     "DailyMusic",
                     "qr/check 成功分支 token=${token.take(6)}… userid=$userId " +
                         "t1=${if (data.str("t1").isBlank()) "无" else "有"}",
                 )
                 if (token.isBlank() || userId.isBlank()) {
+                    dumpLogin("qr/check no-token", j)
                     LoginState.Failed("登录成功但没有拿到 token")
                 } else {
                     LoginState.Success(
@@ -511,25 +516,87 @@ object KugouApi {
         // 成功时 data 是对象（Rust 侧已把 secu_params 解出来合并进来）；
         // 失败时 data 往往是**字符串**（"验证码错误"），obj() 会返回 null。
         val data = j.obj("data")
+        // 同扫码：token 不一定在 data 顶层，`secu_params` 解出来的结构各家版本不一。
+        val token = data?.str("token").orEmpty()
+            .ifBlank { j.str("token") }
+            .ifBlank { j.deepFind(TOKEN_KEYS) }
+        val uid = data?.str("userid").orEmpty()
+            .ifBlank { j.str("userid") }
+            .ifBlank { j.deepFind(USERID_KEYS) }
+        if (token.isNotBlank() && uid.isNotBlank()) {
+            dumpLogin("cellphone ok", j)
+            return PhoneLoginResult.Success(
+                token = token,
+                userId = uid,
+                vipToken = data?.str("vip_token").orEmpty().ifBlank { j.str("vip_token") }.ifBlank { null },
+                vipType = data?.int("vip_type") ?: j.int("vip_type"),
+                t1 = data?.str("t1").orEmpty().ifBlank { j.str("t1") }.ifBlank { null },
+            )
+        }
         if (data != null) {
-            val token = data.str("token").ifBlank { j.str("token") }
-            val uid = data.str("userid").ifBlank { j.str("userid") }
-            if (token.isNotBlank() && uid.isNotBlank()) {
-                return PhoneLoginResult.Success(
-                    token = token,
-                    userId = uid,
-                    vipToken = data.str("vip_token").ifBlank { null },
-                    vipType = data.int("vip_type"),
-                    t1 = data.str("t1").ifBlank { null },
-                )
-            }
             val accounts = parseAccounts(data)
             if (accounts.isNotEmpty()) return PhoneLoginResult.NeedAccount(accounts)
         }
+        dumpLogin("cellphone fail", j)
 
         val msg = j.bizMessage().ifBlank { "登录失败，请稍后重试" }
         val code2 = j.int("error_code")
         return PhoneLoginResult.Failed(if (code2 > 0) "$msg（$code2）" else msg)
+    }
+
+    /**
+     * 在整棵 JSON 树里按 key 名找第一个非空字符串（深度上限 4）。
+     *
+     * 为什么不能只认 `data.token`：登录接口的返回结构随场景变，同一个「成功」可能是
+     * `{"data":{"token":"…"}}`、`{"data":{"info":{"token":"…"}}}`，扫码那条甚至把
+     * token 放在 `data.user_info` 下。写死路径的结果就是「界面能看到账号昵称头像，
+     * 却提示登录失败」—— 因为 token 根本没被取到。
+     */
+    private fun JSONObject.deepFind(names: Set<String>, depth: Int = 0): String {
+        if (depth > 4) return ""
+        // 先扫自己这一层的字符串字段
+        for (k in keys()) {
+            if (k.lowercase() in names) {
+                val v = str(k)
+                if (v.isNotBlank() && v != "undefined" && v != "null" && v != "0") return v
+            }
+        }
+        // 再往下钻
+        for (k in keys()) {
+            when (val child = opt(k)) {
+                is JSONObject -> child.deepFind(names, depth + 1).takeIf { it.isNotBlank() }?.let { return it }
+                is JSONArray -> for (i in 0 until child.length()) {
+                    (child.opt(i) as? JSONObject)
+                        ?.deepFind(names, depth + 1)
+                        ?.takeIf { it.isNotBlank() }
+                        ?.let { return it }
+                }
+            }
+        }
+        return ""
+    }
+
+    /** 登录链路专用的字段名集合。 */
+    private val TOKEN_KEYS = setOf("token")
+    private val USERID_KEYS = setOf("userid", "user_id")
+
+    /**
+     * 把登录接口的原始响应追加到 `files/login_dbg.txt`。
+     *
+     * release 包抓不到 logcat，登录又是「只有在真机输验证码才能复现」的链路，
+     * 只能落到文件里再用 adb 读。只保留最近 200 行，不会无限长。
+     */
+    private fun dumpLogin(tag: String, j: JSONObject) {
+        runCatching {
+            val ctx = com.dailymusic.app.DailyMusicApp.instance
+            val f = java.io.File(ctx.getExternalFilesDir(null), "login_dbg.txt")
+            val old = if (f.exists()) {
+                f.readText().lines().takeLast(200).joinToString("\n")
+            } else {
+                ""
+            }
+            f.writeText(old + "\n=== " + tag + " ===\n" + j.toString() + "\n")
+        }
     }
 
     /** 从登录响应的 `data` 里抽候选账号（多账号绑定场景）。 */

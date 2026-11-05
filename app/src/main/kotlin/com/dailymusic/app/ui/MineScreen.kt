@@ -168,14 +168,20 @@ fun MineScreen(
                     if (Profile.valid) {
                         Text(
                             text = "退出",
-                            modifier = Modifier.clickable(onClick = onLogout).padding(6.dp),
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable(onClick = onLogout)
+                                .padding(horizontal = 8.dp, vertical = 6.dp),
                             fontSize = 13.sp,
                             color = colors.error,
                         )
                     } else {
                         Text(
                             text = "重新登录",
-                            modifier = Modifier.clickable(onClick = onOpenLogin).padding(6.dp),
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable(onClick = onOpenLogin)
+                                .padding(horizontal = 8.dp, vertical = 6.dp),
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Medium,
                             color = colors.primary,
@@ -315,6 +321,9 @@ fun MineScreen(
                                     if (selected) colors.primaryContainer else colors.surfaceContainerHigh,
                                     RoundedCornerShape(14.dp),
                                 )
+                                // clip 必须在 clickable 之前：background 只把**背景**画成圆角，
+                                // 涟漪仍然是整个方形节点，不裁的话按下时四个角会露出直角。
+                                .clip(RoundedCornerShape(14.dp))
                                 .clickable { PlayerManager.setPlayOrder(context, order) },
                             verticalArrangement = Arrangement.Center,
                             horizontalAlignment = Alignment.CenterHorizontally,
@@ -361,6 +370,7 @@ fun MineScreen(
                                     if (selected) colors.primaryContainer else colors.surfaceContainerHigh,
                                     RoundedCornerShape(14.dp),
                                 )
+                                .clip(RoundedCornerShape(14.dp))
                                 .clickable { onQualityChange(value) },
                             verticalArrangement = Arrangement.Center,
                             horizontalAlignment = Alignment.CenterHorizontally,

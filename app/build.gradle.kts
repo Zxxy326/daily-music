@@ -41,9 +41,10 @@ android {
         // 1.3.2 排行榜分区 + 热榜速览。
         // 1.3.6：我的歌单封面（自建取首曲 / 空歌单用头像 / 收藏用原封面）、
         // 添加到歌单、新建歌单、封面缓存。
-        // versionCode 固定 26：测试机已经装到 26，降回去会无法覆盖安装。
-        versionCode = 26
-        versionName = "1.3.6"
+        // 1.3.7：登录 token 解析兜底 + 动感涟漪改 56 bin 单标量驱动。
+        // 1.3.8：我的页胶囊按下涟漪漏圆角。
+        versionCode = 28
+        versionName = "1.3.8"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
