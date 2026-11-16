@@ -109,6 +109,9 @@ import androidx.compose.animation.fadeOut
 /** 放大后保留的安全边距比例：1.0 会贴死容器边缘，缩放取整时可能被裁 1~2px。 */
 private const val SAFE_FRACTION = 0.94f
 
+/** 当前行的放大倍数。布局宽度按它换算，保证放大后正好是 SAFE_FRACTION。 */
+private const val MAX_LYRIC_SCALE = 1.34f
+
 internal val LyricSung = Color.White
 
 /**
@@ -932,17 +935,38 @@ private fun CenterHint(text: String) {
  */
 @Composable
 private fun ThinProgress(position: Long, duration: Long, onSeek: (Long) -> Unit) {
+    // 拖动时先用本地值预览，松手才真正 seek。
+    // 每帧都发 seek 的话播放器会被拖得一顿一顿（每次都要重新起流）。
+    var dragging by remember { mutableStateOf<Float?>(null) }
     val fraction = if (duration > 0L) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f
+    val shown = dragging ?: fraction
     Box(
         Modifier
             .fillMaxWidth()
-            .height(22.dp)
+            // 22 → 28dp：4dp 的线太细，手指按不准，拖起来像「没反应」。
+            .height(28.dp)
             .pointerInput(duration) {
                 detectTapGestures { offset ->
                     if (duration > 0L && size.width > 0) {
                         onSeek(((offset.x / size.width).coerceIn(0f, 1f) * duration).toLong())
                     }
                 }
+            }
+            .pointerInput(duration) {
+                if (duration <= 0L) return@pointerInput
+                detectHorizontalDragGestures(
+                    onDragStart = { off ->
+                        dragging = (off.x / size.width).coerceIn(0f, 1f)
+                    },
+                    onHorizontalDrag = { change, _ ->
+                        dragging = (change.position.x / size.width).coerceIn(0f, 1f)
+                    },
+                    onDragEnd = {
+                        dragging?.let { onSeek((it * duration).toLong()) }
+                        dragging = null
+                    },
+                    onDragCancel = { dragging = null },
+                )
             },
         contentAlignment = Alignment.CenterStart,
     ) {
@@ -956,12 +980,12 @@ private fun ThinProgress(position: Long, duration: Long, onSeek: (Long) -> Unit)
             )
             drawRoundRect(
                 color = Color.White.copy(alpha = 0.9f),
-                size = androidx.compose.ui.geometry.Size(size.width * fraction, h),
+                size = androidx.compose.ui.geometry.Size(size.width * shown, h),
                 cornerRadius = r,
             )
             // 圆点：画在已播放的末端。左右各留 4.5dp 半径，避免首尾被裁掉半个。
             val knobR = 4.5.dp.toPx()
-            val cx = (size.width * fraction).coerceIn(knobR, size.width - knobR)
+            val cx = (size.width * shown).coerceIn(knobR, size.width - knobR)
             drawCircle(color = Color.White, radius = knobR, center = Offset(cx, h / 2))
         }
     }
@@ -1012,7 +1036,10 @@ private fun LyricPanel(
         // 用 DstIn 蒙版（离屏合成）而不是盖一层渐变 —— 背景是模糊封面，
         // 盖纯色块会和底色对不上。
         val fadeEdge = 0.15f
-        val sideEdge = 0.05f
+        // 左右渐隐只在**居中**对齐时启用：那时正文两边本来就有留白，化开的是空白，
+        // 不会吃掉字。居左/居右时正文直接贴边，渐隐会把第一个字糊掉半个，
+        // 所以那种对齐下不加（靠 BasicText 的 5dp 内缩保证模糊不贴边）。
+        val sideFade = if (LyricPrefs.align == LyricPrefs.Align.CENTER) 0.05f else 0f
         val halfViewport = maxHeight / 2
         Box(
             Modifier
@@ -1030,16 +1057,17 @@ private fun LyricPanel(
                         ),
                         blendMode = BlendMode.DstIn,
                     )
-                    // 左右也化开，避免长句在屏幕边缘被「切断」
-                    drawRect(
-                        brush = Brush.horizontalGradient(
-                            0f to Color.Transparent,
-                            sideEdge to Color.Black,
-                            1f - sideEdge to Color.Black,
-                            1f to Color.Transparent,
-                        ),
-                        blendMode = BlendMode.DstIn,
-                    )
+                    if (sideFade > 0f) {
+                        drawRect(
+                            brush = Brush.horizontalGradient(
+                                0f to Color.Transparent,
+                                sideFade to Color.Black,
+                                1f - sideFade to Color.Black,
+                                1f to Color.Transparent,
+                            ),
+                            blendMode = BlendMode.DstIn,
+                        )
+                    }
                 },
         ) {
         LazyColumn(
@@ -1080,8 +1108,9 @@ private fun LyricPanel(
                 if (round == 0) {
                     listState.animateScrollBy(
                         delta.toFloat(),
-                        // dampingRatio 略小于 1：末尾有一点点过冲，像歌词被「吸」到位。
-                        spring(dampingRatio = 0.88f, stiffness = 210f),
+                        // 不要过冲：dampingRatio < 1 时末尾会回弹一下，
+                        // 那一下正好被看成「歌词跳了一下」。
+                        spring(dampingRatio = 1f, stiffness = 260f),
                     )
                 } else {
                     listState.scrollBy(delta.toFloat())
@@ -1123,15 +1152,16 @@ private fun LyricLineItem(
         label = "lyric-alpha",
     )
     val scale by animateFloatAsState(
-        targetValue = if (active) 1.34f else 1f,
+        targetValue = if (active) MAX_LYRIC_SCALE else 1f,
         animationSpec = spring(dampingRatio = 0.62f, stiffness = 320f),
         label = "lyric-scale",
     )
-    val vPad by animateDpAsState(
-        targetValue = if (active) 15.dp else 7.dp,
-        animationSpec = tween(340, easing = FastOutSlowInEasing),
-        label = "lyric-pad",
-    )
+    // 行高必须**恒定**。
+    //
+    // 以前当前行 15dp、其余 7dp，切行时这一行的高度要变 16dp ——
+    // LazyColumn 的内容跟着重排，视觉上就是「滚到当前行会往上跳一下」。
+    // 统一 13dp：足够容纳放大 1.34 倍的当前行，又不会让行距散开。
+    val vPad = 13.dp
 
     // 用户偏好：对齐方式 + 字号
     val hAlign = when (LyricPrefs.align) {
@@ -1157,14 +1187,15 @@ private fun LyricLineItem(
     }
     val baseSp = LyricPrefs.baseSp * LyricPrefs.size.scale
 
-    // 当前行会被放大 1.34 倍。**布局宽度必须同步缩到 1/1.34**，否则长句按原宽度排版、
-    // 再被放大，两边就会溢出容器被裁掉（「I love my one and only ba」那种）。
-    // 再留 6% 安全边距：缩放锚点 + 取整误差都可能让贴边的那一侧差几个像素。
-    // 宽度用 fillMaxWidth(SAFE/scale)，配合外层 Box 的对齐，锚定边不会跑。
+    // 所有行的布局宽度**固定**成 SAFE/1.34，当前行靠 graphicsLayer 放大到满宽。
+    //
+    // 以前宽度写的是 `SAFE/scale`，会跟着当前行 1→1.34 一起收窄：
+    // 英文长句在收窄的那一刻正好跨过换行阈值，一行变两行，行高突变 ——
+    // 这就是「单句换行时才跳」的来源。宽度恒定之后，切行不触发重排，也就不跳了。
     Box(Modifier.fillMaxWidth(), contentAlignment = boxAlign) {
         Column(
             modifier = Modifier
-                .fillMaxWidth(SAFE_FRACTION / scale)
+                .fillMaxWidth(SAFE_FRACTION / MAX_LYRIC_SCALE)
                 .graphicsLayer {
                     this.alpha = alpha
                     scaleX = scale
@@ -1212,9 +1243,13 @@ private fun LyricLineItem(
                 } else {
                     textStyle
                 },
-                modifier = Modifier.fillMaxWidth().let {
-                    if (farBlur > 0.dp) it.blur(farBlur) else it
-                },
+                // blur 必须在 padding **外层**：模糊会向四周扩散约 blurRadius，
+                // 贴着容器边缘就会被图层边界 clamp 成一条直边（就是「模糊被裁成直角」）。
+                // 先 blur 再内缩 5dp，字不贴边，糊出去的部分也有地方落。
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .let { if (farBlur > 0.dp) it.blur(farBlur) else it }
+                    .padding(horizontal = 5.dp),
             )
             if (active) {
                 line.translation?.let { tr ->

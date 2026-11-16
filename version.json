@@ -1,6 +1,6 @@
 {
-  "version": "1.3.8",
-  "notes": "新增：\n· 动感涟漪改用 56 段频谱驱动 —— FFT 提到 2048 点、按对数分频（38Hz 起），\n  波纹的快慢、亮度、宽度全部跟随同一个能量包络，节奏更连贯，不再一顿一顿\n\n修复：\n· 验证码登录后「我的」页误报「登录态已失效」—— 续期接口被拒不等于 token 失效，\n  现在会用 /user/detail 二次确认（扫码登录一直正常，就是因为它不走续期）\n· 登录 token 解析兜底：不再只认 data.token，整棵返回里按字段名递归查找\n· 二维码过期会被误判成「等待扫码」（status 0 被当成字段不存在）\n· 我的页「播放顺序」「音质」胶囊按下时背景漏出直角\n\n优化：\n· 登录链路新增原始响应落盘（Android/data/com.dailymusic.app/files/login_dbg.txt），\n  以后登录出问题不用再靠猜",
-  "apk": "https://github.com/Zxxy326/daily-music/releases/download/v1.3.8/daily-music-1.3.8.apk",
-  "size": 39413631
+  "version": "1.3.16",
+  "notes": "新增：\n· 歌词页底部进度条支持拖动（拖动时实时预览，松手才跳转）\n· 收藏列表按收藏时间倒序，最新收藏排在最上面\n\n修复：\n· 验证码登录后「我的」页误报「登录态已失效」—— 续期接口被拒不等于 token 失效，\n  现在会用 /user/detail 二次确认（扫码登录一直正常，就是因为它不走续期）\n· 登录 token 解析兜底：不再只认 data.token，整棵返回里按字段名递归查找\n· 二维码过期会被误判成「等待扫码」\n· 歌词切行时会向上跳一下 —— 行高和布局宽度都改成固定值，切行不再触发重排\n· 英文歌词单句换行时的多余跳动\n· 居左 / 居右对齐时歌词左右边缘被裁切\n· 远处歌词的模糊被裁成直边\n· 「我的」页播放顺序 / 音质胶囊按下时背景漏出直角\n\n优化：\n· 动感涟漪恢复 1.3.9 的表现（5 条环 + 中段最亮），后续几版尝试的加密和拉远效果都不如它\n· 登录原始响应落盘（Android/data/com.dailymusic.app/files/login_dbg.txt），排查登录问题不用再靠猜",
+  "apk": "https://github.com/Zxxy326/daily-music/releases/download/v1.3.16/daily-music-1.3.16.apk",
+  "size": 39430011
 }

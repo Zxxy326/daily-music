@@ -392,14 +392,28 @@ private fun WavePage(song: Song, lyrics: Lyrics, position: Long) {
     var phase by remember { mutableFloatStateOf(0f) }
 
     /**
-     * 驱动一切的**唯一标量**：整首歌「现在有多响」。
+     * 驱动一切的**唯一标量**。
      *
-     * 之前速度、环亮度、环宽度分别由 bass / mid / high 三个自适应标量驱动，
-     * 问题是这三档的波动幅度差很远（低频常年 0.7~0.9、高频 0.1~0.3），
-     * 各自平滑的节奏也不一样，叠在一起就是「一顿一顿」。
-     * 现在压成一个加权总能量，所有视觉量都从它派生，节奏才是同一条。
+     * 用 `SpectrumTap.bass`（20–250Hz，自带自适应动态范围）而不是「56 段平均」：
+     * 真机实测过，平均出来的总能量常年在 0.68~0.81 之间晃（±0.06），
+     * 因为 shaper 的自适应增益已经把每一段都拉到接近饱和 —— 平均之后等于常数，
+     * 看起来就是「完全不动」。bass 同期在 0.18~0.97 之间跑，鼓点一响立刻顶上去。
      */
-    var energy by remember { mutableFloatStateOf(0f) }
+    /**
+     * 律动强度 0..1 —— 真正驱动画面节奏的那个数。
+     *
+     * 不是「当前有多响」，而是「比刚才这 1 秒响了多少」（onset）。
+     * 原因：整首歌的绝对响度几乎不变（真机实测低频段常年在 0.6~0.9），
+     * 拿它当驱动等于一条直线；而每个鼓点都会让「快包络」短暂超过「慢包络」，
+     * 这个差值才是人耳听到的「律动」。
+     */
+    var level by remember { mutableFloatStateOf(0f) }
+    // 快包络（80ms）/ 慢包络（1.2s）
+    var fast by remember { mutableFloatStateOf(0f) }
+    var slow by remember { mutableFloatStateOf(0f) }
+    // onset 的保持包络：一次鼓点冲上去，约 350ms 衰减回来
+    var beatEnv by remember { mutableFloatStateOf(0f) }
+
 
     // 56 bin → 0..1 柱高，曲线与 vinyl-player 的 spectrum.js 逐行对齐。
     // out 是普通 FloatArray，不参与快照：phase 每帧变会顺带触发重组，绘制时直接读最新值。
@@ -418,16 +432,24 @@ private fun WavePage(song: Song, lyrics: Lyrics, position: Long) {
                 last = now
                 shaper.update(SpectrumTap.bins)
 
-                // 加权总能量：低频为主（鼓点最容易被看见），中高频只补一点厚度。
-                // 直接平均会让高频段把整体拉低，安静段落更看不出起伏。
-                val rawE = 0.55f * shaper.band(0, 10) +
-                    0.30f * shaper.band(10, 32) +
-                    0.15f * shaper.band(32, SpectrumTap.BARS)
-
-                // 长时平滑：起 260ms、落 750ms。
-                // 快起慢落是电平表的手感；落得慢一点，句子之间的空隙不会「掉下去再爬上来」。
-                val ke = if (rawE > energy) 1f - exp(-dt / 0.26f) else 1f - exp(-dt / 0.75f)
-                energy += (rawE - energy) * ke
+                // 在 **dB 域**做 onset。
+                //
+                // 试过三种输入，只有这个能用：
+                // · bins 0..9   → 固定 dB 映射 -100..-30，低频常年 240+，等于常数
+                // · bins 总和   → 同上，实测 0.83~0.90，还是饱和
+                // · bass（自适应）→ 持续响时贴 1.0，也饱和
+                // 原始 dB 没有上限，鼓点进来就是 3~8dB 的跳变，用它算「比刚才响了多少」
+                // 才有分辨率。
+                val raw = SpectrumTap.bassDb
+                fast += (raw - fast) * (1f - exp(-dt / 0.08f))
+                slow += (raw - slow) * (1f - exp(-dt / 1.20f))
+                // 减 0.8dB 底噪：缓慢衰减时 fast 会一直略高于 slow，不减的话包络下不来。
+                // 每 6dB 算一次「打满」。
+                val rise = ((fast - slow) - 0.8f).coerceAtLeast(0f) / 8f
+                // 衰减 220ms：一记鼓点看得见，下一记之前已经落回去
+                beatEnv = maxOf(beatEnv * exp(-dt / 0.28f), rise).coerceIn(0f, 1f)
+                // 0.18 的底：没有鼓点的段落也保持缓慢的呼吸，不是死水
+                level = 0.38f + 0.44f * beatEnv
 
                 // 速度有三路输入：
                 // 1. 频谱的低频 / 中频 —— 有鼓点时最准；
@@ -438,21 +460,21 @@ private fun WavePage(song: Song, lyrics: Lyrics, position: Long) {
                 val line = lyr.lines.getOrNull(lyr.anchorIndex(pos).coerceAtLeast(0))
                 val pulse = wordPulse(line, pos)
 
-                // 目标速度：总能量为主，逐字脉冲只做「轻轻推一下」（0.10），
-                // 不再让它主导 —— 每字一次脉冲会把相位推成碎步，看着就是卡。
-                val target = (0.06f + 0.40f * energy + 0.10f * pulse)
-                    .coerceAtMost(0.50f)
+                // 目标速度：低频包络为主，逐字脉冲只做「轻轻推一下」（0.08）。
+                val target = (0.06f + 0.50f * level + 0.04f * pulse)
+                    .coerceAtMost(0.58f)
 
                 // 速度本身再做一次「快上慢落」的平滑。
                 // 直接拿 bass 当速度会每秒抖十几次，看起来像随机跳帧；
                 // 平滑成「一记鼓点冲上去、半秒内落回来」才有「被音乐推着走」的观感。
                 val k = if (target > speedSmooth) {
-                    1f - exp(-dt / 0.30f)
+                    1f - exp(-dt / 0.16f)
                 } else {
-                    1f - exp(-dt / 0.90f)
+                    1f - exp(-dt / 0.50f)
                 }
                 speedSmooth += (target - speedSmooth) * k
                 phase = (phase + dt * speedSmooth) % 1f
+
             }
         }
     }
@@ -481,7 +503,7 @@ private fun WavePage(song: Song, lyrics: Lyrics, position: Long) {
                 // 竖向压暗要用 DstIn 混合，必须先在离屏层里画。
                 .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen),
         ) {
-            drawWaveField(phase, energy, shaper, palette)
+            drawWaveField(phase, level, shaper, palette)
         }
 
         // 中间压暗垫：波纹本来就淡出，再垫一层保证歌词区绝对干净。
@@ -740,12 +762,18 @@ private fun sungTokens(line: LyricLine?, position: Long, tokens: List<String>): 
  */
 private const val RING_SLOTS = 6
 
-/** 基础环数量；多出来的一条是插在中间、按低频淡入的加强环。 */
+/**
+ * 环数固定 5 条，永远不变。
+ *
+ * 之前试过「鼓点密集时往中间插环」，效果很差 —— 环挨得太近会糊成一片白色圆环，
+ * 反而看不出「一波一波荡出去」。正确的做法是让**同样的 5 条环荡得更远**：
+ * 鼓点越猛 → 相位推进越快 → 波在同样时间里走到更大的半径，这才符合直觉。
+ */
 private const val RING_BASE = 5
 
 private fun DrawScope.drawWaveField(
     phase: Float,
-    energy: Float,
+    drive: Float,
     shaper: SpectrumShaper,
     palette: CoverPalette,
 ) {
@@ -754,30 +782,32 @@ private fun DrawScope.drawWaveField(
 
     // 波带宽度、整体亮度、加强环的出现与否 —— 全部从同一个 energy 派生。
     // 三个量同涨同落，才不会出现「带子变宽的同时环变暗」这种自相矛盾的一帧。
-    val band = w * 0.075f * (1f + 0.50f * energy)
+    val band = w * 0.075f * (0.78f + 0.42f * drive)
     val maxR = w * 0.40f                            // 单侧最远只荡到 40% 屏宽
-    val loud = 0.45f + 0.70f * energy
+    val loud = 0.16f + 0.62f * drive
 
     // 第 6 条「加强环」随能量淡入淡出。
     // 不能改环数 —— 环的相位是 i/rings，改总数会让所有环瞬间挪位、画面像卡了一下。
-    val extra = ((energy - 0.42f) / 0.38f).coerceIn(0f, 1f)
+    val extra = ((drive - 0.56f) / 0.24f).coerceIn(0f, 1f)
+
 
     // 两个波源都在屏幕外，且与歌词同高
     val sources = listOf(Offset(-w * 0.02f, h * 0.5f), Offset(w * 1.02f, h * 0.5f))
 
     for (center in sources) {
         for (i in 0 until RING_SLOTS) {
-            // 5 条基础环 + 1 条插在中间的加强环
             val offset = if (i < RING_BASE) i / RING_BASE.toFloat() else 0.1f
             // 环亮度**主要由总能量决定**，频段只给 ±12% 的着色。
             // 之前每条环独立认领一段频段，低频段 0.8、高频段 0.2，六条环亮暗差三倍，
             // 看起来就是「有的环在闪、有的环不动」。压平之后整片是同一次呼吸。
             val segFrom = (i * SpectrumTap.BARS / RING_BASE)
+                .coerceIn(0, SpectrumTap.BARS - 1)
             val segTo = ((i + 1) * SpectrumTap.BARS / RING_BASE)
-            val tint = (shaper.band(segFrom, segTo) - energy).coerceIn(-0.30f, 0.30f)
+                .coerceIn(segFrom + 1, SpectrumTap.BARS)
+            val tint = (shaper.band(segFrom, segTo) - drive).coerceIn(-0.30f, 0.30f)
             val tone = 0.94f + 0.20f * tint
-            val gate = if (i < RING_BASE) (0.42f + 0.58f * energy) * tone
-            else extra * (0.42f + 0.58f * energy) * tone
+            val gate = if (i < RING_BASE) (0.35f + 0.65f * drive) * tone
+            else extra * (0.35f + 0.65f * drive) * tone
             if (gate <= 0.01f) continue
             val p = (phase + offset) % 1f
             val r = maxR * p
@@ -788,7 +818,7 @@ private fun DrawScope.drawWaveField(
             val a = 0.78f * loud * gate * fin * fin * fout * fout
             if (a <= 0.004f) continue
 
-            val ringVar = (if (i % 2 == 0) 1f else 0.80f) * (0.82f + 0.30f * energy)
+            val ringVar = (if (i % 2 == 0) 1f else 0.80f) * (0.80f + 0.40f * drive)
 
             val outer = r + band * 0.5f
             if (outer <= 1f) continue

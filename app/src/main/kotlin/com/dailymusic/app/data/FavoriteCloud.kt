@@ -159,6 +159,9 @@ object FavoriteCloud {
     private suspend fun pullAllInner(maxPages: Int): List<Song>? {
         val id = resolveListId() ?: return null
         val out = LinkedHashMap<String, Song>()
+        // 收藏时间：酷狗「我喜欢」是按**正序**（最旧在前）返回的，
+        // 收藏页要「新收藏在最上面」，所以最后按这个时间倒序排一遍。
+        val collectedAt = HashMap<String, Long>()
         var raw = 0
         var pages = 0
         for (page in 1..maxPages) {
@@ -176,6 +179,7 @@ object FavoriteCloud {
                     ?: o.long("FileId").takeIf { it > 0 }
                 if (fid != null) fileIds[song.hash.lowercase()] = fid
                 out[song.key] = song
+                collectedAt[song.key] = o.long("collecttime")
             }
             if (items.size < PAGE_SIZE) break
         }
@@ -200,7 +204,8 @@ object FavoriteCloud {
         lastError = null
         persistFileIds()
         lastSyncAt = System.currentTimeMillis()
-        return out.values.toList()
+        // 新收藏在前。collecttime 缺失（个别老数据）时退回 0，排在最后。
+        return out.values.sortedByDescending { collectedAt[it.key] ?: 0L }
     }
 
     // ---------------- 内部 ----------------

@@ -178,6 +178,7 @@ fun RootScreen() {
     // 后台被清），remember 会归零，表现是「正扫码/输验证码，页面自己弹回我的」。
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var playerOpen by remember { mutableStateOf(false) }
+
     var lyricsOpen by remember { mutableStateOf(false) }
 
     /** 「我的」tab 里的二级页面：-1 = 首页，0 = 收藏，1 = 历史，2 = 登录，3 = 每日畅听。 */
@@ -262,6 +263,13 @@ fun RootScreen() {
     }
 
     val current = PlayerManager.current
+
+
+
+
+
+
+
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
     // 列表底部要留出「底栏/迷你播放器」的高度，否则最后几首永远被挡住。

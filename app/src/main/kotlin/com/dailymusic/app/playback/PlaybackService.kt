@@ -13,6 +13,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.audio.AudioOffloadSupport
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
+import androidx.media3.exoplayer.audio.TeeAudioProcessor
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
@@ -71,7 +72,7 @@ class PlaybackService : MediaSessionService() {
                 enableFloatOutput: Boolean,
                 enableAudioTrackPlaybackParams: Boolean,
             ): AudioSink = DefaultAudioSink.Builder(context)
-                .setAudioProcessors(arrayOf(SpectrumProcessor()))
+                    .setAudioProcessors(arrayOf(TeeAudioProcessor(SpectrumSink())))
                 .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
                 .setAudioOffloadSupportProvider { _, _ -> AudioOffloadSupport.DEFAULT_UNSUPPORTED }
                 .build()

@@ -104,7 +104,9 @@ object Library {
         val owner = prefs?.getString(KEY_FAVORITE_OWNER, null)
         val switched = owner != null && owner != uid
         val localOnly = if (switched) emptyList() else favorites.filter { it.key !in cloudKeys }
-        val merged = cloud + localOnly
+        // 本地还没传上去的那批是最新的，放最前面；
+        // 云端那批在 FavoriteCloud 里已经按收藏时间倒序排好了。
+        val merged = localOnly + cloud
 
         if (merged.map { it.key } != favorites.map { it.key }) {
             favorites = merged

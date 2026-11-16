@@ -2,7 +2,7 @@ package com.dailymusic.app.playback
 
 import androidx.media3.common.C
 import androidx.media3.common.audio.AudioProcessor
-import androidx.media3.common.audio.BaseAudioProcessor
+import androidx.media3.exoplayer.audio.TeeAudioProcessor
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.PI
@@ -47,6 +47,17 @@ object SpectrumTap {
     var bins: IntArray = IntArray(BARS)
         private set
 
+    /**
+     * 低频段（20–250Hz）的**原始 dB**，没做任何归一化。
+     *
+     * 为什么需要它：`bass` 走过自适应映射，持续响的段落会贴到 1.0；`bins` 的
+     * dB 映射是固定 -100..-30，流行歌常年顶在 240+。两者都饱和之后，
+     * 「比刚才更响了多少」就检测不出来了。原始 dB 不会饱和，用它做 onset 才有意义。
+     */
+    @Volatile
+    var bassDb: Float = -100f
+        private set
+
     @Volatile
     var bass: Float = 0f
         private set
@@ -89,6 +100,7 @@ object SpectrumTap {
     private var fill = 0
     private var sampleRate = 44_100
     private var channels = 2
+    private var encoding = C.ENCODING_PCM_16BIT
 
     /** 暂停 / 切歌时清干净，免得波纹停在最后一帧不动。 */
     fun reset() {
@@ -109,13 +121,17 @@ object SpectrumTap {
      * 调用方在播放线程上，所以这里不能分配对象、不能做重活：
      * 2048 点 FFT 大约十几万次浮点运算，够快。
      */
-    fun feed(buffer: ByteBuffer, format: AudioProcessor.AudioFormat) {
-        val ch = format.channelCount.coerceAtLeast(1)
-        if (format.sampleRate > 0) sampleRate = format.sampleRate
-        channels = ch
+    /** Tee sink 的 flush 回调：格式变了就记下来。 */
+    fun onFormat(sampleRateHz: Int, channelCount: Int, encoding: Int) {
+        if (sampleRateHz > 0) sampleRate = sampleRateHz
+        channels = channelCount.coerceAtLeast(1)
+        this.encoding = encoding
+    }
 
+    fun feed(buffer: ByteBuffer) {
+        val ch = channels.coerceAtLeast(1)
         val dup = buffer.duplicate().order(ByteOrder.nativeOrder())
-        when (format.encoding) {
+        when (encoding) {
             // 24bit / 32bit 也要认：Hi-Res 曲目在某些机器上会走到这两档，
             // 漏掉的话表现就是「有声音但频谱全是 0」，波纹自然不动。
             C.ENCODING_PCM_24BIT -> {
@@ -189,7 +205,8 @@ object SpectrumTap {
         fft(re, im)
 
         val binHz = sampleRate.toFloat() / FFT_SIZE
-        bass = smooth(bass, mapBand(0, bandDb(20f, 250f, binHz)))
+        bassDb = bandDb(20f, 250f, binHz)
+        bass = smooth(bass, mapBand(0, bassDb))
         mid = smooth(mid, mapBand(1, bandDb(250f, 2_000f, binHz)))
         high = smooth(high, mapBand(2, bandDb(2_000f, 8_000f, binHz)))
 
@@ -336,16 +353,13 @@ object SpectrumTap {
  * 继承 [BaseAudioProcessor] 而不是自己实现接口，是因为 configure / flush / reset
  * 这些生命周期它已经处理好了，这里只需要补 `queueInput`。
  */
-class SpectrumProcessor : BaseAudioProcessor() {
+class SpectrumSink : TeeAudioProcessor.AudioBufferSink {
 
-    override fun queueInput(inputBuffer: ByteBuffer) {
-        val size = inputBuffer.remaining()
-        if (size <= 0) return
+    override fun flush(sampleRateHz: Int, channelCount: Int, encoding: Int) {
+        SpectrumTap.onFormat(sampleRateHz, channelCount, encoding)
+    }
 
-        runCatching { SpectrumTap.feed(inputBuffer, inputAudioFormat) }
-
-        val out = replaceOutputBuffer(size)
-        out.put(inputBuffer)
-        out.flip()
+    override fun handleBuffer(buffer: ByteBuffer) {
+        runCatching { SpectrumTap.feed(buffer) }
     }
 }
