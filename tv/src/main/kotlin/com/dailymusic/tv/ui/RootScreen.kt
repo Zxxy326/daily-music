@@ -47,12 +47,16 @@ fun TvRoot() {
     var sub by remember { mutableStateOf<TvSub?>(null) }
     // 播放页里的工具面板（队列/音质/定时/更多），覆盖在播放页之上。
     var playerTool by remember { mutableStateOf<PlayerTool?>(null) }
+    // 歌词动效全屏页（动感涟漪 / 简约 / 精简时钟），层级最高。
+    var showLyricEffect by remember { mutableStateOf(false) }
 
-    BackHandler(enabled = playerTool != null) { playerTool = null }
-    BackHandler(enabled = playerTool == null && showPlayer) { showPlayer = false }
+    // 返回键优先级：歌词动效 > 工具面板 > 播放页 > 二级页 > 退出。
+    BackHandler(enabled = showLyricEffect) { showLyricEffect = false }
+    BackHandler(enabled = !showLyricEffect && playerTool != null) { playerTool = null }
+    BackHandler(enabled = !showLyricEffect && playerTool == null && showPlayer) { showPlayer = false }
     // 详情页在内容区里切换，返回键先退详情、再退页面。
     // 「我的歌单详情」特殊：它上面还有「我的歌单」列表这一层，先退回列表。
-    BackHandler(enabled = playerTool == null && !showPlayer && sub != null) {
+    BackHandler(enabled = !showLyricEffect && playerTool == null && !showPlayer && sub != null) {
         sub = if (sub is TvSub.MyPlaylistDetail) TvSub.MyPlaylists else null
     }
 
@@ -150,7 +154,18 @@ fun TvRoot() {
                 onOpenQuality = { playerTool = PlayerTool.Quality },
                 onOpenSleep = { playerTool = PlayerTool.Sleep },
                 onOpenMore = { playerTool = PlayerTool.More },
+                onOpenLyricEffect = { showLyricEffect = true },
             )
+        }
+
+        // 歌词动效全屏页：盖在播放页与工具面板之上，返回键优先级最高。
+        if (showLyricEffect) {
+            PlayerManager.current?.let { song ->
+                com.dailymusic.tv.ui.TvLyricEffectScreen(
+                    song = song,
+                    onClose = { showLyricEffect = false },
+                )
+            }
         }
 
         if (playerTool != null) {

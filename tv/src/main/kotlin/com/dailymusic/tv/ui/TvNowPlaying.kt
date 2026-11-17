@@ -47,6 +47,7 @@ fun TvNowPlaying(
     onOpenQuality: () -> Unit = {},
     onOpenSleep: () -> Unit = {},
     onOpenMore: () -> Unit = {},
+    onOpenLyricEffect: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val song = PlayerManager.current
@@ -170,6 +171,7 @@ fun TvNowPlaying(
                     onClick = onOpenSleep,
                 )
                 ToolChip(text = "更多", onClick = onOpenMore)
+                ToolChip(text = "歌词动效", highlight = true, onClick = onOpenLyricEffect)
             }
 
         }

@@ -11,12 +11,18 @@
 
 | 设备 | 下载 | 说明 |
 |---|---|---|
-| 老盒子 / 32 位设备 | [daily-music-tv-1.0.7-32bit.apk](https://github.com/Zxxy326/daily-music/releases/download/tv-v1.0.7/daily-music-tv-1.0.7-32bit.apk) | `armeabi-v7a`，兼容性最好 |
-| 新电视 / 64 位设备 | [daily-music-tv-1.0.7-64bit.apk](https://github.com/Zxxy326/daily-music/releases/download/tv-v1.0.7/daily-music-tv-1.0.7-64bit.apk) | `arm64-v8a`，性能更好 |
+| 老盒子 / 32 位设备 | [daily-music-tv-1.0.8-32bit.apk](https://github.com/Zxxy326/daily-music/releases/download/tv-v1.0.8/daily-music-tv-1.0.8-32bit.apk) | `armeabi-v7a`，兼容性最好 |
+| 新电视 / 64 位设备 | [daily-music-tv-1.0.8-64bit.apk](https://github.com/Zxxy326/daily-music/releases/download/tv-v1.0.8/daily-music-tv-1.0.8-64bit.apk) | `arm64-v8a`，性能更好 |
 
 > 不确定设备位数？两个都试一下，装不上或打开闪退就换另一个。32 位包在任何 64 位设备上也能运行，只是性能略低。
 
-**功能**：首页推荐歌单 / 榜单 / 新歌速递、搜索、曲库与歌手页、我的歌单、播放页与滚动歌词、播放队列 / 音质 / 睡眠定时、扫码登录与签到、设置与检查更新（识曲、评论等移动端功能在 TV 端不做）。
+**功能**：首页推荐歌单 / 榜单 / 新歌速递、搜索、曲库与歌手页、我的歌单、播放页与滚动歌词、播放队列 / 音质 / 睡眠定时、扫码登录与签到、设置与检查更新。**三种歌词动效**（播放页工具行「歌词动效」进入，遥控器左右键切换）：
+
+- **动感涟漪** —— 封面取色打底，频谱驱动的左右同心波带，歌词从两侧向中间逐字汇合
+- **简约** —— 模糊封面 + 描边歌名，两句歌词一左一右逐字点亮
+- **精简时钟** —— 模糊封面 + 辉光，大号时间当背景板
+
+（识曲、评论等移动端功能在 TV 端不做。）
 
 **安装**：把 APK 拷到 U 盘插到电视上，用文件管理器或当贝 / 沙发桌面打开安装；或直接用 adb `adb install xxx.apk`。首次启动若弹出「16KB 分页兼容」提示，选「不再显示」即可，不影响使用。
 
