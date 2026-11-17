@@ -7,38 +7,6 @@ import com.dailymusic.app.data.Library
 import com.dailymusic.app.data.LyricPrefs
 import com.dailymusic.app.data.SearchHistory
 import com.dailymusic.app.data.YouthVip
-import com.dailymusic.app.native.KugouServer
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
-
-/**
- * 启动引导。
- *
- * Rust 服务（JNA → libkugou_server.so）必须跑起来，所有接口才有意义。它在
- * Application 里异步启动，首帧不被阻塞；任何接口调用前用 [await] 等它 ready，
- * 避免出现「baseUrl 端口还是 0」的竞态。
- */
-object AppBootstrap {
-
-    private val ready = CompletableDeferred<Int>()
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private var launched = false
-
-    fun launch(context: Application) {
-        if (launched) return
-        launched = true
-        scope.launch {
-            val port = KugouServer.start(context)
-            ready.complete(port)
-        }
-    }
-
-    /** 返回本地服务端口；启动失败返回 0。 */
-    suspend fun await(): Int = ready.await()
-}
 
 class DailyMusicApp : Application() {
 
@@ -47,6 +15,7 @@ class DailyMusicApp : Application() {
             private set
     }
     override fun onCreate() {
+        com.dailymusic.app.data.AppCtx.init(this)
         super.onCreate()
         // 收藏 / 历史是同步读盘的（几百条 JSON，毫秒级），放在这里能让首帧就显示正确计数。
         instance = this

@@ -16,3 +16,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "DailyMusic"
 include(":app")
+include(":core")
+include(":tv")

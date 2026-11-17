@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- TV 主题：纯深色底 + 无标题栏。电视没有系统栏，也不需要任何装饰 -->
+    <style name="Theme.DailyMusicTv" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#0D1117</item>
+        <item name="android:statusBarColor">#0D1117</item>
+        <item name="android:navigationBarColor">#0D1117</item>
+        <item name="android:windowActionBar">false</item>
+    </style>
+</resources>

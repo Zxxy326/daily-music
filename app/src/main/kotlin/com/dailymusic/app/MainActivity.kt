@@ -8,6 +8,8 @@ import com.dailymusic.app.ui.RootScreen
 import com.dailymusic.app.ui.theme.DailyMusicTheme
 
 class MainActivity : ComponentActivity() {
+
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)

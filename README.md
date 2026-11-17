@@ -2,6 +2,31 @@
 
 一款 HyperOS 风格的在线音乐客户端，用 **Kotlin + Jetpack Compose + Miuix** 构建。
 
+同时提供一个独立的 **TV 版**（Android TV / 电视盒子），遥控器即可操作，与手机版是两个不同的 APK，可同时安装。
+
+
+## 📺 TV 版
+
+面向 Android TV / 电视盒子的独立应用（`com.dailymusic.tv`），10 英尺大屏界面，方向键 + 确认键 + 返回键全程可操作。按处理器架构分两个包，**按你的设备选一个装即可**：
+
+| 设备 | 下载 | 说明 |
+|---|---|---|
+| 老盒子 / 32 位设备 | [daily-music-tv-1.0.7-32bit.apk](https://github.com/Zxxy326/daily-music/releases/download/tv-v1.0.7/daily-music-tv-1.0.7-32bit.apk) | `armeabi-v7a`，兼容性最好 |
+| 新电视 / 64 位设备 | [daily-music-tv-1.0.7-64bit.apk](https://github.com/Zxxy326/daily-music/releases/download/tv-v1.0.7/daily-music-tv-1.0.7-64bit.apk) | `arm64-v8a`，性能更好 |
+
+> 不确定设备位数？两个都试一下，装不上或打开闪退就换另一个。32 位包在任何 64 位设备上也能运行，只是性能略低。
+
+**功能**：首页推荐歌单 / 榜单 / 新歌速递、搜索、曲库与歌手页、我的歌单、播放页与滚动歌词、播放队列 / 音质 / 睡眠定时、扫码登录与签到、设置与检查更新（识曲、评论等移动端功能在 TV 端不做）。
+
+**安装**：把 APK 拷到 U 盘插到电视上，用文件管理器或当贝 / 沙发桌面打开安装；或直接用 adb `adb install xxx.apk`。首次启动若弹出「16KB 分页兼容」提示，选「不再显示」即可，不影响使用。
+
+**TV 版构建**：
+
+```bash
+# 分 ABI 各出一个包（需先备好 32/64 位 .so）
+./gradlew :tv:assembleRelease
+# 产物：tv/build/outputs/apk/release/tv-{armeabi-v7a,arm64-v8a}-release.apk
+```
 
 ## 界面预览
 

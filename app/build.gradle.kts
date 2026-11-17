@@ -52,8 +52,9 @@ android {
         // 1.3.14：涟漪整体回滚到 1.3.9 的表现（5 基础环 + 中段最亮 + 固定 40% 半径）。
         // 1.3.15：歌词行高固定（修切行跳动）、去掉左右渐隐（修居左/居右被裁）、进度条可拖动。
         // 1.3.16：歌词布局宽度固定（修英文换行跳动）+ 模糊留扩散空间（修直边）+ 居中时恢复左右渐隐。
-        versionCode = 36
-        versionName = "1.3.16"
+        // 1.4.0：新增 TV 端（独立 TvActivity，遥控器焦点导航），首页 + 播放页已可用。
+        versionCode = 37
+        versionName = "1.4.0"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
@@ -103,6 +104,8 @@ kotlin {
 }
 
 dependencies {
+    implementation(project(":core"))
+
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.activity:activity-compose:1.10.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")

@@ -25,6 +25,7 @@ keystore.properties
 
 # 工作区本地记录
 .workbuddy-ai/
+.workbuddy/
 
 # JVM 崩溃日志（构建时内存不足会掉在仓库根目录）
 hs_err_pid*.log
