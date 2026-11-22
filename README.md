@@ -11,8 +11,8 @@
 
 | 设备 | 下载 | 说明 |
 |---|---|---|
-| 老盒子 / 32 位设备 | [daily-music-tv-1.0.8-32bit.apk](https://github.com/Zxxy326/daily-music/releases/download/tv-v1.0.8/daily-music-tv-1.0.8-32bit.apk) | `armeabi-v7a`，兼容性最好 |
-| 新电视 / 64 位设备 | [daily-music-tv-1.0.8-64bit.apk](https://github.com/Zxxy326/daily-music/releases/download/tv-v1.0.8/daily-music-tv-1.0.8-64bit.apk) | `arm64-v8a`，性能更好 |
+| 老盒子 / 32 位设备 | [daily-music-tv-1.0.9-32bit.apk](https://github.com/Zxxy326/daily-music/releases/download/tv-v1.0.9/daily-music-tv-1.0.9-32bit.apk) | `armeabi-v7a`，兼容性最好 |
+| 新电视 / 64 位设备 | [daily-music-tv-1.0.9-64bit.apk](https://github.com/Zxxy326/daily-music/releases/download/tv-v1.0.9/daily-music-tv-1.0.9-64bit.apk) | `arm64-v8a`，性能更好 |
 
 > 不确定设备位数？两个都试一下，装不上或打开闪退就换另一个。32 位包在任何 64 位设备上也能运行，只是性能略低。
 
@@ -21,6 +21,8 @@
 - **动感涟漪** —— 封面取色打底，频谱驱动的左右同心波带，歌词从两侧向中间逐字汇合
 - **简约** —— 模糊封面 + 描边歌名，两句歌词一左一右逐字点亮
 - **精简时钟** —— 模糊封面 + 辉光，大号时间当背景板
+
+> v1.0.9：已在 MuMu 模拟器联网实测三种动效渲染，并修复播放页工具胶囊重叠、效果切换方向键跳格、效果页返回键失效三个交互问题。
 
 （识曲、评论等移动端功能在 TV 端不做。）
 

@@ -159,7 +159,7 @@ fun TvNowPlaying(
             Spacer(Modifier.height(24.dp))
 
             // 工具行：队列 / 音质 / 定时 / 更多，进二级页操作（TV 不用弹层）。
-            Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                 ToolChip(text = "队列", onClick = onOpenQueue)
                 ToolChip(
                     text = PlayerManager.actualQualityLabel.ifBlank { "音质" },
@@ -189,7 +189,10 @@ private fun timeText(ms: Long): String {
 private fun ToolChip(text: String, highlight: Boolean = false, onClick: () -> Unit) {
     FocusSurface(
         onClick = onClick,
-        modifier = Modifier.height(46.dp),
+        // 必须给固定宽度：Row 是全宽约束，内部 Box 又是 fillMaxSize，
+        // 不设宽度会让 5 个胶囊各占满整行互相重叠，只露出最后一个。
+        // 96dp 刚好容纳最长的「歌词动效 / 标准 128k」，5 个横排不挤出屏幕。
+        modifier = Modifier.width(96.dp).height(46.dp),
         shape = RoundedCornerShape(99.dp),
         scaleUp = 1.06f,
     ) {
@@ -197,7 +200,7 @@ private fun ToolChip(text: String, highlight: Boolean = false, onClick: () -> Un
             Modifier
                 .fillMaxSize()
                 .background(if (highlight) TvColor.accentDeep else TvColor.card)
-                .padding(horizontal = 20.dp),
+                .padding(horizontal = 12.dp),
             contentAlignment = Alignment.Center,
         ) {
             BasicText(

@@ -29,8 +29,8 @@ android {
         applicationId = "com.dailymusic.tv"
         minSdk = 33
         targetSdk = 37
-        versionCode = 9
-        versionName = "1.0.8"
+        versionCode = 10
+        versionName = "1.0.9"
 
         // 32/64 位各出一个独立包：老盒子装 32 位，新电视/盒子装 64 位。
     }

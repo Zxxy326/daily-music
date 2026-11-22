@@ -15,7 +15,6 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -42,11 +41,14 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
@@ -60,9 +62,6 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -130,29 +129,18 @@ fun TvLyricEffectScreen(
     val focusRequesters = remember { List(effects.size) { FocusRequester() } }
     LaunchedEffect(Unit) { runCatching { focusRequesters[0].requestFocus() } }
 
-    // 左右方向键切换效果（同时按钮也各自可点/可聚焦）。
-    @OptIn(ExperimentalComposeUiApi::class)
-    val keyNav = Modifier.onKeyEvent { e ->
-        when (e.key) {
-            Key.DirectionRight -> {
-                index = (index + 1) % effects.size
-                runCatching { focusRequesters[index].requestFocus() }
-                true
-            }
-            Key.DirectionLeft -> {
-                index = (index - 1 + effects.size) % effects.size
-                runCatching { focusRequesters[index].requestFocus() }
-                true
-            }
-            else -> false
-        }
-    }
-
+    // 纯焦点驱动切换：左右方向键让焦点在三个 tab 间移动，哪个 tab 获得焦点
+    // 就把 index 设成它。之前 Box.onKeyEvent 也改 index + tab 双焦点目标，
+    // 一次按键会被处理两次（跳 2 格），这里统一交给焦点系统，一次只走一格。
     Box(
         Modifier
             .fillMaxSize()
             .background(Color.Black)
-            .then(keyNav),
+            // 返回键兜底：用 onPreviewKeyEvent 在焦点 tab 的 clickable 之前拦截 Back，
+            // 避免 tab 消费掉导致 RootScreen 的 BackHandler 收不到（实测退出失效）。
+            .onPreviewKeyEvent { e ->
+                if (e.key == Key.Back) { onClose(); true } else false
+            },
     ) {
         val position = PlayerManager.positionMs
         when (effect) {
@@ -175,6 +163,7 @@ fun TvLyricEffectScreen(
                     label = e.label,
                     selected = i == index,
                     modifier = Modifier.focusRequester(focusRequesters[i]),
+                    onFocus = { index = i },
                 ) { index = i }
             }
         }
@@ -193,8 +182,10 @@ private fun EffectTab(
     label: String,
     selected: Boolean,
     modifier: Modifier = Modifier,
+    onFocus: () -> Unit,
     onClick: () -> Unit,
 ) {
+    var focused by remember { mutableStateOf(false) }
     BasicText(
         label,
         style = TextStyle(
@@ -204,12 +195,18 @@ private fun EffectTab(
         ),
         modifier = modifier
             .background(
-                if (selected) Color.White.copy(alpha = 0.22f) else Color.Black.copy(alpha = 0.35f),
+                when {
+                    focused -> Color.White.copy(alpha = 0.32f)
+                    selected -> Color.White.copy(alpha = 0.22f)
+                    else -> Color.Black.copy(alpha = 0.35f)
+                },
                 androidx.compose.foundation.shape.RoundedCornerShape(99.dp),
             )
             .padding(horizontal = 18.dp, vertical = 10.dp)
-            .clickable(onClick = onClick)
-            .focusable(),
+            // 单个焦点目标：onFocusChanged 必须在 clickable 之前，监听 clickable
+            // 创建的那个 target。不要再加 focusable()，否则变成两个 target 会错位。
+            .onFocusChanged { if (it.isFocused) { focused = true; onFocus() } else focused = false }
+            .clickable(onClick = onClick),
     )
 }
 
